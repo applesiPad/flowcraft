@@ -15,7 +15,7 @@ npm install
 npm run dev -- --port 5177          # 开发：http://127.0.0.1:5177/
 # 独立示例（不覆盖本地画布）：http://127.0.0.1:5177/?example=ecommerce
 # 性能基线压测入口（不读写本地存档）：http://127.0.0.1:5177/?bench=medium&cull=1
-npm test                            # 196 个 Node 测试
+npm test                            # 193 个 Node 测试
 npm run lint                        # Oxlint
 npm run build                       # TypeScript + Vite 生产构建
 npm start                           # 生产构建 + 预览：http://127.0.0.1:5178/

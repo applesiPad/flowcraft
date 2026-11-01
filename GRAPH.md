@@ -20,43 +20,45 @@
 flowcraft/
 ├─ src/
 │  ├─ main.tsx                 应用启动（刻意不启用 StrictMode）
-│  ├─ App.tsx                  工作台、画布状态、快捷键、导入导出、批注/模板接线
-│  ├─ index.css                全局样式、编辑器、批注与模板市场样式
-│  ├─ App.css                  Vite 模板残留样式（当前应用未引用）
+│  ├─ App.tsx                  工作台、画布状态、快捷键、导入导出、批注/模板/画布接线
+│  ├─ index.css                全局样式：编辑器、原型、画布/快照/体检面板
 │  └─ flow/
-│     ├─ types.ts              核心数据结构（含备注锚点 NoteAnchor）
-│     ├─ sample.ts             电商示例 8 个界面 / 12 个节点 / 14 条连线
-│     ├─ nodes.tsx             Screen / Decision / Action / Note 节点渲染（备注为矩形说明卡）
-│     ├─ Icon.tsx              13 类界面元素图标
-│     ├─ Palette.tsx           模板市场、搜索/分类、模板导入导出、节点面板
-│     ├─ Inspector.tsx         节点/连线/元素编辑、连线热点与走向、批注面板
-│     ├─ ScreenView.tsx        画布内高保真界面渲染与走查交互
-│     ├─ Preview.tsx           全屏原型预览播放器
-│     ├─ edges.tsx             自定义 FlowEdge：标签、回边平衡、手动通道、避障接入
-│     ├─ edgeRouting.ts        纯几何避障路由：AABB + 压缩网格 A* + 回边平衡
-│     ├─ edgeRoutingCache.ts   有界 LRU 边路由缓存（默认 2048 条）
-│     ├─ edgeStoreSelectors.ts 边共享派生状态：zoom / lane 分组 / 节点几何 / 可视区（WeakMap 记忆）
-│     ├─ benchGraph.ts         性能基线合成大图（?bench=small|medium|large）+ 页内 FPS/DOM 指标
-│     ├─ noteLayout.ts         备注锚定、旧存档迁移、布局重算与级联删除
-│     ├─ annotations.ts        批注数据模型、校验、增删改、解析与统计
-│     ├─ templateMarket.ts     模板校验、分类、搜索、去重合并、Bundle 导入导出
-│     ├─ templatePacks.ts      内置行业模板包：包定义、校验、实例化为节点/边
-│     ├─ templateThumbnails.ts 模板/模板包 SVG 缩略图（纯函数，无 DOM 依赖）
-│     ├─ exportFile.ts         JSON / HTML 文本下载
-│     ├─ exportHtml.ts         单文件 HTML 原型导出（内嵌播放器：条件求值 / 校验 / 动效）
-│     ├─ prototypeLogic.ts     原型逻辑共享模块：条件求值、输入校验、跳转目标解析
-│     ├─ canvasStore.ts        多画布存储：画布列表/活动画布/数据键、legacy 迁移
-│     ├─ snapshotStore.ts      版本快照存储 + 两份流程的结构化 diff
-│     ├─ flowHealth.ts         流程健康检查：死路/孤立/未接线主按钮/分支不全
-│     ├─ exportCanvas.ts       PNG / SVG / PDF 画布导出
-│     ├─ exportTypes.ts        画布导出选项与结果类型
-│     ├─ exportGeometry.ts     节点尺寸解析与导出包围盒
-│     ├─ exportLayout.ts       视口适配、PDF 排版、文件名
-│     └─ history.ts            增量撤销/重做快照
-├─ tests/                      20 个 Node 测试文件（几何、缓存、导出、批注、模板、模板包、原型逻辑、画布、快照、健康检查、备注布局、基准图等）
-├─ docs/                       README 截图、示例原型与性能基线记录
+│     ├─ Icon.tsx            13 类界面元素图标
+│     ├─ Inspector.tsx       节点/连线/元素编辑、条件与校验编辑、批注面板
+│     ├─ Palette.tsx         模板市场、行业模板包、搜索/分类、缩略图
+│     ├─ Preview.tsx         全屏原型预览播放器（输入/校验/分支/动效）
+│     ├─ ScreenView.tsx      画布内高保真界面渲染与走查交互
+│     ├─ annotations.ts      批注数据模型、校验、增删改、解析与统计
+│     ├─ benchGraph.ts       性能基线合成大图（?bench=…）+ 页内指标
+│     ├─ canvasStore.ts      多画布存储：列表/活动 id/数据键、legacy 迁移
+│     ├─ edgeLabel.ts        边标签尺寸、lane 依据与对端分组
+│     ├─ edgeRouting.ts      正交 A* 避障 + 回边平衡（纯几何）
+│     ├─ edgeRoutingCache.ts 有界 LRU 边路由缓存（2048）
+│     ├─ edgeStoreSelectors.ts边共享派生状态（WeakMap 一次派生）
+│     ├─ edges.tsx           自定义 FlowEdge：标签、回边、手动通道
+│     ├─ elementEditor.ts    元素拖拽/缩放/吸附/容器钳制
+│     ├─ exportCanvas.ts     PNG / SVG / PDF 画布导出
+│     ├─ exportFile.ts       JSON / 文本下载
+│     ├─ exportGeometry.ts   节点尺寸解析与导出包围盒
+│     ├─ exportHtml.ts       单文件 HTML 原型导出（内嵌播放器）
+│     ├─ exportLayout.ts     视口适配、PDF 排版、文件名
+│     ├─ exportTypes.ts      画布导出选项与结果类型
+│     ├─ flowHealth.ts       流程健康检查：四类缺陷扫描
+│     ├─ history.ts          增量撤销/重做快照
+│     ├─ nodes.tsx           Screen / Decision / Action / Note 节点渲染
+│     ├─ noteLayout.ts       备注锚定、旧存档迁移、级联删除
+│     ├─ prototypeLogic.ts   原型逻辑共享模块：条件求值/输入校验/跳转解析
+│     ├─ sample.ts           电商示例与 6 种内置界面模板
+│     ├─ snapshotStore.ts    版本快照存储 + 结构化 diff
+│     ├─ templateMarket.ts   模板校验、搜索、去重、Bundle 导入导出
+│     ├─ templatePacks.ts    内置行业模板包定义与实例化
+│     ├─ templateThumbnails.ts模板/模板包 SVG 缩略图（纯函数）
+│     ├─ theme.ts            深浅主题与边框颜色
+│     ├─ types.ts            核心数据结构（含条件/校验/备注锚点）
+├─ tests/                      19 个 Node 测试文件（与 src/flow 模块一一对应 + 几何/导出布局专项）
+├─ docs/                       截图、性能基线、协作方案设计与进度记录
 ├─ public/                     favicon 与图标资源
-└─ .ego-edge-routing-qa-20261101/  连线路由复测脚本（3 个）
+└─ vite.config.ts / tsconfig*.json / package.json
 ```
 
 ## 3. 运行时数据流
@@ -267,7 +269,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 196 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
+npm test          # 193 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
