@@ -130,7 +130,7 @@ Annotation = { id, targetType: 'node' | 'edge', targetId, content, color, create
 
 ## 下一步建议（按性价比排序）
 
-1. 若确需协作，单独设计后端、权限与冲突合并（见 `docs/协作方案设计.md`，仅设计不实现）
+1. ~~若确需协作，单独设计后端、权限与冲突合并~~ ✅ 设计已产出：[docs/协作方案设计.md](./docs/协作方案设计.md)（仅设计，不实现）
 2. JSON 导入时增加显式 schema 版本迁移与错误详情
 
 已完成（2026-11-01）：`FlowEdge` lane/peer 预分组与共享派生状态、边路由 LRU 扩容至 2048（见上表「边标签共享派生状态」）。
