@@ -37,7 +37,8 @@ import type { EdgeRouteMode } from "./flow/edgeRouting";
 import { EditorContext } from "./flow/ScreenView";
 import { initialEdges, initialNodes, screenTemplates } from "./flow/sample";
 import { buildPackGraph, packBounds, screenPacks, type ScreenPack } from "./flow/templatePacks";
-import { buildPrototypeHtml, resolveScreenTarget } from "./flow/exportHtml";
+import { buildPrototypeHtml } from "./flow/exportHtml";
+import { resolveFlowTarget } from "./flow/prototypeLogic";
 import { exportTextFile } from "./flow/exportFile";
 import {
   applyFlowHistory,
@@ -410,10 +411,12 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
       const graph = buildPackGraph(pack, { x: anchor.x - bounds.minX, y: anchor.y - bounds.minY }, uid);
       if (!graph.nodes.length) return;
       snapshot();
-      setNodes((ns) => ns.concat(graph.nodes));
+      // 主界面节点直接进入 React Flow 选择态：否则 onSelectionChange 的空选择事件会把
+      // selNode 冲掉，插入后属性面板与预览起点都会退回第一个界面
+      const primaryIndex = graph.nodes.findIndex((n) => n.type === "screen");
+      setNodes((ns) => ns.concat(graph.nodes.map((n, i) => (i === primaryIndex ? { ...n, selected: true } : n))));
       setEdges((es) => es.concat(graph.edges));
-      const primary = graph.nodes.find((n) => n.type === "screen") ?? graph.nodes[0];
-      setSelNode(primary.id);
+      setSelNode(graph.nodes[primaryIndex].id);
       setSelEdge(null);
       setInspectorOpen(true);
       // 包比单个节点宽得多：让新节点进入视野而不是留在原地看不见
@@ -445,7 +448,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         y: (-viewport.y + window.innerHeight * 0.36) / viewport.zoom,
       };
       const node = createNode(payload, position);
-      setNodes((ns) => ns.concat(node));
+      setNodes((ns) => ns.concat({ ...node, selected: true }));
       setSelNode(node.id);
       setSelEdge(null);
       setInspectorOpen(true);
@@ -470,7 +473,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
       }
       snapshot();
       const node = createNode(payload, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
-      setNodes((ns) => ns.concat(node));
+      setNodes((ns) => ns.concat({ ...node, selected: true }));
       setSelNode(node.id);
       setSelEdge(null);
       setInspectorOpen(true);
@@ -672,8 +675,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         showToast("这个热点还没配置跳转，拖它右侧的圆点到目标界面即可");
         return;
       }
-      const screenIds = new Set(nodes.filter((n) => n.type === "screen").map((n) => n.id));
-      const target = resolveScreenTarget(link.target, nodes, edges, screenIds);
+      // 走查只负责「跳到哪」：不带入变量，判断节点走默认分支
+      const target = resolveFlowTarget(link.target, nodes, edges, {});
       if (!target) {
         showToast("这条连线最终没有落到界面节点上");
         return;

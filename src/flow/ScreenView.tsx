@@ -45,7 +45,10 @@ function Chevron() {
   return <span className="fc-chevron">›</span>;
 }
 
-function renderElement(el: ScreenElement, preview: boolean) {
+/** 输入型元素在预览下的可输入渲染参数；onChange 存在 = 用真实 <input> 代替占位文本 */
+type ElementInput = { value?: string; onChange?: (value: string) => void; invalid?: boolean };
+
+function renderElement(el: ScreenElement, preview: boolean, input?: ElementInput) {
   switch (el.kind) {
     case "logo":
       return (
@@ -77,9 +80,21 @@ function renderElement(el: ScreenElement, preview: boolean) {
       return (
         <div className="fc-input">
           {el.label ? <div className="fc-input-label">{el.label}</div> : null}
-          <div className="fc-input-field">
-            <span className="fc-input-ph">{el.placeholder ?? "请输入"}</span>
-            {preview ? <span className="fc-caret" /> : null}
+          <div className={`fc-input-field${input?.invalid ? " is-invalid" : ""}`}>
+            {input?.onChange ? (
+              <input
+                className="fc-input-native"
+                data-var={el.name}
+                value={input.value ?? ""}
+                placeholder={el.placeholder ?? "请输入"}
+                onChange={(e) => input.onChange?.(e.target.value)}
+              />
+            ) : (
+              <>
+                <span className="fc-input-ph">{el.placeholder ?? "请输入"}</span>
+                {preview ? <span className="fc-caret" /> : null}
+              </>
+            )}
           </div>
         </div>
       );
@@ -172,6 +187,12 @@ export type ScreenViewProps = {
   onWalkHotspot?: (elId: string) => void;
   /** 编辑期未配置跳转的热点，key 为 nodeId:elId */
   unlinkedHotspotKeys?: ReadonlySet<string>;
+  /** 预览模式：可输入元素当前值（key = `${nodeId}:${elId}`） */
+  inputValues?: Record<string, string>;
+  /** 预览模式：输入变更回调；提供后带变量名的 input 渲染为真实输入框 */
+  onInputChange?: (elId: string, value: string) => void;
+  /** 预览模式：校验失败的元素 id 集合（输入框描红） */
+  errorElIds?: ReadonlySet<string>;
   /** 首次拖动时把当前竖排布局固化成绝对坐标 */
   onFreezeLayout?: (boxes: Record<string, ElementBox>) => void;
   onMoveElement?: (elId: string, box: ElementBox) => void;
@@ -191,8 +212,11 @@ export function ScreenView({
   interactive = false,
   walkMode = false,
   onWalkHotspot,
-  onFreezeLayout,
   unlinkedHotspotKeys,
+  inputValues,
+  onInputChange,
+  errorElIds,
+  onFreezeLayout,
   onMoveElement,
   onResizeElement,
   zoom = 1,
@@ -345,6 +369,18 @@ export function ScreenView({
 
   const highlights = !preview && (nodeSelected || false);
 
+  const inputFor = useCallback(
+    (el: ScreenElement): ElementInput | undefined => {
+      if (!preview || !onInputChange || el.kind !== "input" || !el.name) return undefined;
+      return {
+        value: inputValues?.[`${nodeId ?? ""}:${el.id}`] ?? "",
+        onChange: (value: string) => onInputChange(el.id, value),
+        invalid: errorElIds?.has(el.id) ?? false,
+      };
+    },
+    [preview, onInputChange, inputValues, errorElIds, nodeId],
+  );
+
   return (
     <div className={`fc-screen${preview ? " is-preview" : ""}${free ? " is-free" : ""}`}>
       <div className="fc-statusbar">
@@ -395,7 +431,7 @@ export function ScreenView({
                 }}
                 title={interactive && !preview ? (unlinked ? "热点未配置跳转：把右侧圆点拖到目标界面" : "拖动可自由排版") : undefined}
               >
-                {renderElement(el, preview)}
+                {renderElement(el, preview, inputFor(el))}
                 {preview && hotspotLabels?.[el.id] ? <span className="fc-hotspot-tag">{hotspotLabels[el.id]}</span> : null}
                 {!preview && highlights ? <span className="fc-hotspot-pin" /> : null}
                 {unlinked ? <span className="fc-hotspot-warning" aria-label="未配置跳转">!</span> : null}
@@ -423,7 +459,7 @@ export function ScreenView({
               onPointerDown={(e) => beginDrag(e, el)}
               title={interactive && !preview ? "拖动可自由排版" : undefined}
             >
-              {renderElement(el, preview)}
+              {renderElement(el, preview, inputFor(el))}
               {interactive && !preview && box ? RESIZE_HANDLES.map((h) => (
                 <span
                   key={h.pos}

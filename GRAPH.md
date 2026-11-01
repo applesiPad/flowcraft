@@ -43,13 +43,14 @@ flowcraft/
 │     ├─ templatePacks.ts      内置行业模板包：包定义、校验、实例化为节点/边
 │     ├─ templateThumbnails.ts 模板/模板包 SVG 缩略图（纯函数，无 DOM 依赖）
 │     ├─ exportFile.ts         JSON / HTML 文本下载
-│     ├─ exportHtml.ts         单文件 HTML 原型导出
+│     ├─ exportHtml.ts         单文件 HTML 原型导出（内嵌播放器：条件求值 / 校验 / 动效）
+│     ├─ prototypeLogic.ts     原型逻辑共享模块：条件求值、输入校验、跳转目标解析
 │     ├─ exportCanvas.ts       PNG / SVG / PDF 画布导出
 │     ├─ exportTypes.ts        画布导出选项与结果类型
 │     ├─ exportGeometry.ts     节点尺寸解析与导出包围盒
 │     ├─ exportLayout.ts       视口适配、PDF 排版、文件名
 │     └─ history.ts            增量撤销/重做快照
-├─ tests/                      16 个 Node 测试文件（几何、缓存、导出、批注、模板、模板包、备注布局、基准图等）
+├─ tests/                      17 个 Node 测试文件（几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、基准图等）
 ├─ docs/                       README 截图、示例原型与性能基线记录
 ├─ public/                     favicon 与图标资源
 └─ .ego-edge-routing-qa-20261101/  连线路由复测脚本（3 个）
@@ -148,6 +149,19 @@ graph TD
 | 面板交互 | `src/flow/Palette.tsx` / 搜索、分类、导入、导出、空态 |
 | 本地持久化 | `App.tsx` / `TEMPLATE_STORAGE_KEY` |
 
+### 原型逻辑（2026-11-02 完成：条件求值 / 输入校验 / 切换动效）
+
+| 能力 | 文件 / 符号 |
+| --- | --- |
+| 共享求值器（纯函数） | `src/flow/prototypeLogic.ts` / `evaluateCondition`、`pickDecisionHandle`、`resolveFlowTarget`、`validateInputValue`、`firstValidationError`、`namedInputs` |
+| 条件与校验数据类型 | `src/flow/types.ts` / `ConditionSpec`、`InputValidation`（`DecisionData.condition`、`ScreenElement.name/validation`） |
+| 属性面板编辑 | `src/flow/Inspector.tsx` / 判断节点「原型求值」区块；输入元素的变量名 + 校验规则 |
+| 预览接线 | `src/flow/Preview.tsx` / `vars` 变量表、输入收集、校验拦截、分支 toast、方向动效 |
+| 可输入元素渲染 | `src/flow/ScreenView.tsx` / `inputValues`、`onInputChange`、`errorElIds`（预览下带变量名的 input 渲染为真实输入框） |
+| 导出播放器 | `src/flow/exportHtml.ts` / 拓扑直出 + 运行时求值（`evalCond`/`resolveTarget` 与 TS 同语义），`window.__fcDebug` QA 钩子 |
+
+实现要点：预览与导出播放器共用 `prototypeLogic.ts` 的语义；导出时不再预解析判断穿透，而是把原始拓扑 + 条件交给播放器运行时求值，保证两边行为一致。变量取自各界面「有变量名的输入框」，跨界面累积；判断节点无条件时默认走「是」。
+
 ### 模板缩略图与行业模板包（2026-11-02 完成）
 
 | 能力 | 文件 / 符号 |
@@ -236,7 +250,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 162 个测试：几何、缓存、导出、批注、模板、模板包、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
+npm test          # 171 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -291,15 +305,14 @@ npm run dev -- --port 5177
 - 路由候选网格随节点数量增长；已加有界 LRU 缓存 + 可视区裁剪（默认开）。自动回边平衡是确定性几何启发式，不保证全图交叉数全局最优。
 - 可视区裁剪开启时，视口外节点不在 DOM 中；任何依赖克隆实时 DOM 的功能（PNG/SVG/PDF 导出、打印）必须先走 `withFullRender`。全图 fitView 时裁剪没有 DOM 收益，medium 级图挂载会慢约 3s（见基线文档）。
 - 模板市场是本地模板库，不涉及远程服务器或账号体系。
-- 导出的单文件原型是静态快照，不带输入校验、条件求值或动效。
+- 导出的单文件原型带条件求值、输入校验与切换动效，但仍是前端演示快照：没有真实提交、存储或服务端逻辑；条件只支持单变量比较。
 - `.fc-screen` 使用 `overflow: hidden`；元素拖拽/缩放与属性面板数字输入都经 `clampMoveBox`/`clampResizeBox` 钳制在 `.fc-body` 内容区内（Ego 实测越界拖动 1200px 后贴边不越界）。自由布局高度随内容增长，纵向不封顶。
 
 下一步建议（按性价比）：
 
-1. 导出原型加条件分支求值、输入校验与页面切换动效。
-2. 流程健康检查：死路界面 / 孤立界面 / 未接线主按钮一键扫描。
-3. 多画布与版本对比；若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
-4. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
+1. 流程健康检查：死路界面 / 孤立界面 / 未接线主按钮一键扫描。
+2. 多画布与版本对比；若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+3. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
 
 已完成（2026-11-01）：`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描改为 `edgeStoreSelectors.ts` 共享派生（WeakMap 按 store 对象记忆，一次更新全图只派生一次；200 节点/240 边确定性微基准 2.68→0.06 ms/帧，Ego A/B 电商示例 14 边 path d 校验和与标签 lane 逐字节一致）；边路由 LRU 扩容至 2048，并对几何数组实例做了序列缓存。
 

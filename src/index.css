@@ -1121,6 +1121,84 @@ button {
   color: #94a3b8;
 }
 
+/* 预览模式可输入的原生输入框（变量名元素） */
+.fc-input-native {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  color: #1e293b;
+  padding: 0;
+  height: 100%;
+}
+
+.fc-input-native::placeholder {
+  color: #94a3b8;
+}
+
+/* 原型校验失败：输入框描红 */
+.fc-input-field.is-invalid {
+  border-color: rgba(239, 68, 68, 0.65);
+  outline: 2px solid rgba(239, 68, 68, 0.45);
+  outline-offset: 1px;
+}
+
+/* 属性面板：输入元素的变量名 + 校验规则行 */
+.fc-el-vars {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.fc-el-vars input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-el-vars select {
+  flex: 0 0 auto;
+  max-width: 84px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 11.5px;
+  padding: 4px 4px;
+  background: #fff;
+  color: #334155;
+}
+
+/* 预览设备进场动效：前进右滑入 / 返回左滑入 */
+@keyframes fc-slide-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fc-slide-back {
+  from {
+    opacity: 0;
+    transform: translateX(-26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.fc-anim-fwd {
+  animation: fc-slide-fwd 0.32s ease-out;
+}
+
+.fc-anim-back {
+  animation: fc-slide-back 0.32s ease-out;
+}
+
 .fc-caret {
   width: 1.5px;
   height: 15px;

@@ -8,7 +8,7 @@
  * 该文件刻意只依赖类型与 sample.ts（纯数据），可被 Node 测试直接 import。
  */
 import type { Edge, Node } from "@xyflow/react";
-import type { ScreenData, ScreenElement, ScreenTemplate } from "./types.ts";
+import type { ConditionSpec, ScreenData, ScreenElement, ScreenTemplate } from "./types.ts";
 import { screenTemplates } from "./sample.ts";
 
 /** 名义尺寸：只用于缩略图与「插入到视口中心」时的包围盒计算，实际节点尺寸由内容决定。 */
@@ -30,6 +30,8 @@ export type PackNodeSpec = {
   /** decision 节点的「是/否」出口文案 */
   yes?: string;
   no?: string;
+  /** decision 节点的原型求值条件（预览与导出播放器共用语义） */
+  condition?: ConditionSpec;
   x: number;
   y: number;
 };
@@ -59,7 +61,7 @@ export const screenPacks: ScreenPack[] = [
     nodes: [
       { key: "s-list", kind: "screen", templateKey: "home", title: "商品列表", x: 0, y: 0 },
       { key: "s-detail", kind: "screen", templateKey: "detail", title: "商品详情", x: 620, y: 0 },
-      { key: "d-login", kind: "decision", title: "已登录？", yes: "是", no: "否", x: 1240, y: 10 },
+      { key: "d-login", kind: "decision", title: "已登录？", yes: "是", no: "否", condition: { variable: "phone", op: "notEmpty" }, x: 1240, y: 10 },
       { key: "s-login", kind: "screen", templateKey: "login", title: "账号登录", x: 1240, y: 640 },
       { key: "s-cart", kind: "screen", templateKey: "pay", title: "购物车结算", x: 1860, y: 0 },
       { key: "d-pay", kind: "decision", title: "支付成功？", yes: "是", no: "否", x: 2480, y: 10 },
@@ -265,7 +267,7 @@ export function buildPackGraph(pack: ScreenPack, base: { x: number; y: number },
         id,
         type: "decision",
         position,
-        data: { title: spec.title, yes: spec.yes, no: spec.no } as unknown as Record<string, unknown>,
+        data: { title: spec.title, yes: spec.yes, no: spec.no, condition: spec.condition ?? null } as unknown as Record<string, unknown>,
       } satisfies Node;
     }
     return {

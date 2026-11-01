@@ -16,8 +16,8 @@ export const screenTemplates: Record<string, ScreenTemplate> = {
       title: "登录",
       elements: [
         el("logo", "logo", { label: "FlowCraft", sublabel: "把交互画成真实界面", icon: "sparkle" }),
-        el("phone", "input", { label: "手机号", placeholder: "请输入手机号", hotspot: true, action: "输入手机号" }),
-        el("code", "input", { label: "验证码", placeholder: "6 位验证码", hotspot: true, action: "输入验证码" }),
+        el("phone", "input", { label: "手机号", placeholder: "请输入手机号", hotspot: true, action: "输入手机号", name: "phone", validation: "phone" }),
+        el("code", "input", { label: "验证码", placeholder: "6 位验证码", hotspot: true, action: "输入验证码", name: "code" }),
         el("send", "button", { label: "获取验证码", tone: "ghost", hotspot: true, action: "获取验证码" }),
         el("submit", "button", { label: "登录", tone: "primary", hotspot: true, action: "登录" }),
         el("wechat", "button", { label: "微信一键登录", tone: "ghost", hotspot: true, action: "微信登录" }),

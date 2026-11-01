@@ -6,6 +6,7 @@ import type { Annotation, AnnotationColor, AnnotationTargetType } from "./annota
 import type { DecisionData, NoteAnchorSide, NoteData, ScreenData, ScreenElement } from "./types";
 import { normalizeEdgeRouteMode } from "./edgeRouting";
 import { clampMoveBox, clampResizeBox, DEFAULT_ELEMENT_REGION } from "./elementEditor";
+import { CONDITION_OPS, normalizeCondition, VALIDATION_OPTIONS } from "./prototypeLogic";
 
 /** 属性面板的数字输入以界面本地像素为单位（zoom=1 视角下的默认内容区） */
 const EL_REGION = DEFAULT_ELEMENT_REGION;
@@ -1023,6 +1024,32 @@ export function Inspector(props: Props) {
                       placeholder="元素文案"
                       onChange={(e) => props.onPatchElement(node.id, el.id, { label: e.target.value }, `element:${node.id}:${el.id}:label`)}
                     />
+                    {el.kind === "input" ? (
+                      <div className="fc-el-vars">
+                        <input
+                          aria-label={`输入变量名：${el.label ?? el.kind}`}
+                          value={el.name ?? ""}
+                          placeholder="变量名（条件判断用，可空）"
+                          onChange={(e) =>
+                            props.onPatchElement(node.id, el.id, { name: e.target.value.trim() || undefined }, `element:${node.id}:${el.id}:name`)
+                          }
+                        />
+                        <select
+                          aria-label={`输入校验规则：${el.label ?? el.kind}`}
+                          value={el.validation ?? ""}
+                          onChange={(e) =>
+                            props.onPatchElement(node.id, el.id, { validation: (e.target.value || undefined) as ScreenElement["validation"] })
+                          }
+                        >
+                          <option value="">不校验</option>
+                          {VALIDATION_OPTIONS.map((v) => (
+                            <option key={v.value} value={v.value}>
+                              {v.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="fc-el-actions">
                     <button
@@ -1106,7 +1133,16 @@ export function Inspector(props: Props) {
 
   if (node.type === "decision") {
     const data = node.data as unknown as DecisionData;
+    const cond = normalizeCondition(data.condition);
+    const condKey = `node:${node.id}:condition`;
     const annotationCount = annotationCountFor(props.annotations, "node", node.id);
+    const patchCondition = (variable: string, op: (typeof CONDITION_OPS)[number]["value"], value: string) => {
+      props.onPatchNodeData(
+        node.id,
+        { condition: variable.trim() ? { variable: variable.trim(), op, value } : null },
+        condKey,
+      );
+    };
     return (
       <div className="fc-inspector" data-inspector-kind="decision">
         <style>{annotationPanelStyles}</style>
@@ -1126,6 +1162,45 @@ export function Inspector(props: Props) {
                 <span>否</span>
                 <input value={data.no ?? "否"} onChange={(e) => props.onPatchNodeData(node.id, { no: e.target.value }, `node:${node.id}:no`)} />
               </label>
+            </div>
+          </InspectorSection>
+
+          <InspectorSection title="原型求值" meta={cond ? `${cond.variable}` : "默认走「是」"} defaultOpen>
+            <p className="fc-inspector-note">
+              原型预览与导出播放器会按此条件自动选分支。变量取自各界面输入框的「变量名」；变量留空 = 永远走「是」。
+            </p>
+            <div className="fc-inspector-fields">
+              <label className="fc-field">
+                <span>变量</span>
+                <input
+                  value={cond?.variable ?? ""}
+                  placeholder="例如 phone"
+                  onChange={(e) => patchCondition(e.target.value, cond?.op ?? "==", cond?.value ?? "")}
+                />
+              </label>
+              <label className="fc-field">
+                <span>比较</span>
+                <select
+                  value={cond?.op ?? "=="}
+                  onChange={(e) => patchCondition(cond?.variable ?? "", e.target.value as (typeof CONDITION_OPS)[number]["value"], cond?.value ?? "")}
+                >
+                  {CONDITION_OPS.map((op) => (
+                    <option key={op.value} value={op.value}>
+                      {op.label}（{op.value}）
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {cond?.op !== "empty" && cond?.op !== "notEmpty" ? (
+                <label className="fc-field">
+                  <span>期望值</span>
+                  <input
+                    value={cond?.value ?? ""}
+                    placeholder="例如 100 或 vip"
+                    onChange={(e) => patchCondition(cond?.variable ?? "", cond?.op ?? "==", e.target.value)}
+                  />
+                </label>
+              ) : null}
             </div>
           </InspectorSection>
 
