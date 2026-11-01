@@ -39,6 +39,28 @@ import { initialEdges, initialNodes, screenTemplates } from "./flow/sample";
 import { buildPackGraph, packBounds, screenPacks, type ScreenPack } from "./flow/templatePacks";
 import { buildPrototypeHtml } from "./flow/exportHtml";
 import { resolveFlowTarget } from "./flow/prototypeLogic";
+import {
+  ensureCanvases,
+  newCanvasMeta,
+  readCanvasData,
+  removeCanvasData,
+  sanitizeCanvasName,
+  uniqueCanvasName,
+  writeActiveCanvasId,
+  writeCanvasData,
+  writeCanvasList,
+  type CanvasMeta,
+} from "./flow/canvasStore";
+import {
+  addSnapshot,
+  autoSnapshotName,
+  diffFlows,
+  readSnapshots,
+  removeSnapshot,
+  type FlowDiff,
+  type FlowSnapshot,
+} from "./flow/snapshotStore";
+import { HEALTH_KIND_LABEL, scanFlowHealth, type HealthIssue } from "./flow/flowHealth";
 import { exportTextFile } from "./flow/exportFile";
 import {
   applyFlowHistory,
@@ -153,7 +175,18 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [canvases, setCanvases] = useState<CanvasMeta[]>([]);
+  const [activeCanvasId, setActiveCanvasId] = useState<string | null>(null);
+  const [canvasMenuOpen, setCanvasMenuOpen] = useState(false);
+  const [canvasMenuPosition, setCanvasMenuPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [renamingCanvasId, setRenamingCanvasId] = useState<string | null>(null);
+  const [confirmDeleteCanvasId, setConfirmDeleteCanvasId] = useState<string | null>(null);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [snapOpen, setSnapOpen] = useState(false);
+  const [snapshots, setSnapshots] = useState<FlowSnapshot[]>([]);
+  const [diffView, setDiffView] = useState<{ name: string; diff: FlowDiff } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const canvasMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimer = useRef<number | null>(null);
 
@@ -248,6 +281,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
       return;
     }
     let hasSaved = false;
+    let legacyFlow: { nodes: Node[]; edges: Edge[]; annotations: Annotation[] } | null = null;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -258,11 +292,20 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
           if (Array.isArray(parsed.annotations)) setAnnotations(parseAnnotations(parsed.annotations));
           setRestored(true);
           hasSaved = true;
+          legacyFlow = { nodes: parsed.nodes, edges: parsed.edges ?? [], annotations: Array.isArray(parsed.annotations) ? parseAnnotations(parsed.annotations) : [] };
           window.setTimeout(() => setRestored(false), 2200);
         }
       }
     } catch {
       /* 本地存储不可用或缓存损坏时，先用内置样例启动。 */
+    }
+    // 多画布登记：legacy 存档原地登记为第一个画布（flow.v1 仍是活动画布的存储）
+    try {
+      const ensured = ensureCanvases(localStorage, legacyFlow, () => uid("c"));
+      setCanvases(ensured.list);
+      setActiveCanvasId(ensured.activeId);
+    } catch {
+      /* 隐私模式下忽略 */
     }
     // 首次进入：有存档就整体适配，没有就聚焦到第一张界面上（避免一上来缩成小点）
     if (hasSaved) {
@@ -1231,6 +1274,232 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     searchInputRef.current?.focus();
     searchInputRef.current?.select();
   }, [searchOpen]);
+
+  /* ---------- 多画布 / 快照 / 体检 ---------- */
+  const canvasEnabled = !exampleMode && !bench;
+  const activeCanvas = useMemo(() => canvases.find((c) => c.id === activeCanvasId) ?? null, [canvases, activeCanvasId]);
+
+  const openCanvasMenu = useCallback(() => {
+    const rect = canvasMenuRef.current?.getBoundingClientRect();
+    setCanvasMenuPosition(rect ? { left: rect.left, top: rect.bottom + 6, width: rect.width } : null);
+    setCanvasMenuOpen((v) => !v);
+    setRenamingCanvasId(null);
+    setConfirmDeleteCanvasId(null);
+  }, []);
+
+  /** 归档当前画布数据并切换：flow.v1 始终是活动画布的镜像 */
+  const loadCanvasContent = useCallback(
+    (id: string) => {
+      const data = readCanvasData(localStorage, id);
+      snapshot();
+      setNodes(data ? migrateLegacyNoteAnchors(data.nodes) : []);
+      setEdges(data?.edges ?? []);
+      setAnnotations(data?.annotations ?? []);
+      setSelNode(null);
+      setSelEdge(null);
+      writeActiveCanvasId(localStorage, id);
+      setActiveCanvasId(id);
+      setDiffView(null);
+      window.setTimeout(() => fitView({ padding: 0.16, minZoom: 0.4, maxZoom: 0.9, duration: 360 }), 240);
+    },
+    [fitView, setEdges, setNodes, snapshot],
+  );
+
+  const switchCanvas = useCallback(
+    (id: string) => {
+      if (!canvasEnabled || !activeCanvasId || id === activeCanvasId) return;
+      if (!canvases.some((c) => c.id === id)) return;
+      writeCanvasData(localStorage, activeCanvasId, { nodes: canonicalNodes, edges, annotations });
+      // 切走前给当前画布拍一张自动快照，防止误切丢内容
+      const list = addSnapshot(localStorage, activeCanvasId, {
+        id: uid("s"),
+        name: autoSnapshotName(),
+        createdAt: Date.now(),
+        auto: true,
+        data: { nodes: canonicalNodes, edges, annotations },
+      });
+      if (activeCanvasId) setSnapshots(list.slice());
+      const target = canvases.find((c) => c.id === id);
+      loadCanvasContent(id);
+      setSnapshots(readSnapshots(localStorage, id));
+      setCanvasMenuOpen(false);
+      showToast(`已切换到「${target?.name ?? id}」，切换前的内容已自动存快照`);
+    },
+    [canvasEnabled, activeCanvasId, canvases, canonicalNodes, edges, annotations, loadCanvasContent, showToast],
+  );
+
+  const createCanvas = useCallback(() => {
+    if (!canvasEnabled) return;
+    if (canvases.length >= 20) {
+      showToast("画布数量已达上限（20 个），先删除不用的画布");
+      return;
+    }
+    const id = uid("c");
+    const name = uniqueCanvasName(canvases, "新画布");
+    writeCanvasData(localStorage, id, { nodes: [], edges: [], annotations: [] });
+    const list = [...canvases, newCanvasMeta(name, id)];
+    writeCanvasList(localStorage, list);
+    setCanvases(list);
+    if (activeCanvasId) {
+      writeCanvasData(localStorage, activeCanvasId, { nodes: canonicalNodes, edges, annotations });
+      addSnapshot(localStorage, activeCanvasId, {
+        id: uid("s"),
+        name: autoSnapshotName(),
+        createdAt: Date.now(),
+        auto: true,
+        data: { nodes: canonicalNodes, edges, annotations },
+      });
+    }
+    loadCanvasContent(id);
+    setCanvasMenuOpen(false);
+    showToast(`已创建「${name}」`);
+  }, [canvasEnabled, canvases, activeCanvasId, canonicalNodes, edges, annotations, loadCanvasContent, showToast]);
+
+  const renameCanvas = useCallback(
+    (id: string, rawName: string) => {
+      const name = sanitizeCanvasName(rawName);
+      if (!name) {
+        setRenamingCanvasId(null);
+        return;
+      }
+      const list = canvases.map((c) => (c.id === id ? { ...c, name, updatedAt: Date.now() } : c));
+      writeCanvasList(localStorage, list);
+      setCanvases(list);
+      setRenamingCanvasId(null);
+    },
+    [canvases],
+  );
+
+  const duplicateCanvas = useCallback(
+    (id: string) => {
+      if (!canvasEnabled) return;
+      const source = canvases.find((c) => c.id === id);
+      if (!source) return;
+      if (canvases.length >= 20) {
+        showToast("画布数量已达上限（20 个），先删除不用的画布");
+        return;
+      }
+      const data = id === activeCanvasId ? { nodes: canonicalNodes, edges, annotations } : readCanvasData(localStorage, id);
+      const newId = uid("c");
+      writeCanvasData(localStorage, newId, data ?? { nodes: [], edges: [], annotations: [] });
+      const list = [...canvases, newCanvasMeta(uniqueCanvasName(canvases, `${source.name} 副本`), newId)];
+      writeCanvasList(localStorage, list);
+      setCanvases(list);
+      showToast(`已复制为「${list[list.length - 1].name}」`);
+    },
+    [canvasEnabled, canvases, activeCanvasId, canonicalNodes, edges, annotations, showToast],
+  );
+
+  const deleteCanvas = useCallback(
+    (id: string) => {
+      if (!canvasEnabled) return;
+      if (canvases.length <= 1) {
+        showToast("至少保留一个画布");
+        return;
+      }
+      const target = canvases.find((c) => c.id === id);
+      const list = canvases.filter((c) => c.id !== id);
+      removeCanvasData(localStorage, id);
+      localStorage.removeItem(`flowcraft.snapshots.${id}`);
+      writeCanvasList(localStorage, list);
+      setCanvases(list);
+      setConfirmDeleteCanvasId(null);
+      if (id === activeCanvasId) {
+        loadCanvasContent(list[0].id);
+        showToast(`已删除「${target?.name ?? id}」，切换到「${list[0].name}」`);
+      } else {
+        showToast(`已删除「${target?.name ?? id}」`);
+      }
+    },
+    [canvasEnabled, canvases, activeCanvasId, loadCanvasContent, showToast],
+  );
+
+  const refreshSnapshots = useCallback(
+    (id: string = activeCanvasId ?? "") => {
+      setSnapshots(id ? readSnapshots(localStorage, id) : []);
+      setDiffView(null);
+    },
+    [activeCanvasId],
+  );
+
+  const takeSnapshot = useCallback(() => {
+    if (!canvasEnabled || !activeCanvasId) return;
+    const snap: FlowSnapshot = {
+      id: uid("s"),
+      name: uniqueCanvasName(
+        snapshots.map((s) => ({ id: s.id, name: s.name, createdAt: s.createdAt, updatedAt: s.createdAt })),
+        `快照 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`,
+      ),
+      createdAt: Date.now(),
+      auto: false,
+      data: { nodes: canonicalNodes, edges, annotations },
+    };
+    setSnapshots(addSnapshot(localStorage, activeCanvasId, snap));
+    showToast("已拍摄快照，可在快照面板对比或恢复");
+  }, [canvasEnabled, activeCanvasId, snapshots, canonicalNodes, edges, annotations, showToast]);
+
+  const restoreSnapshot = useCallback(
+    (snap: FlowSnapshot) => {
+      if (!canvasEnabled || !activeCanvasId) return;
+      writeCanvasData(localStorage, activeCanvasId, { nodes: canonicalNodes, edges, annotations });
+      const list = addSnapshot(localStorage, activeCanvasId, {
+        id: uid("s"),
+        name: autoSnapshotName(),
+        createdAt: Date.now(),
+        auto: true,
+        data: { nodes: canonicalNodes, edges, annotations },
+      });
+      setSnapshots(list);
+      snapshot();
+      setNodes(migrateLegacyNoteAnchors(snap.data.nodes));
+      setEdges(snap.data.edges);
+      setAnnotations(snap.data.annotations);
+      setSelNode(null);
+      setSelEdge(null);
+      setDiffView(null);
+      window.setTimeout(() => fitView({ padding: 0.16, minZoom: 0.4, maxZoom: 0.9, duration: 360 }), 240);
+      showToast(`已恢复「${snap.name}」，恢复前的内容已自动存快照`);
+    },
+    [canvasEnabled, activeCanvasId, canonicalNodes, edges, annotations, snapshot, setEdges, setNodes, fitView, showToast],
+  );
+
+  const compareSnapshot = useCallback(
+    (snap: FlowSnapshot) => {
+      const diff = diffFlows(snap.data, { nodes: canonicalNodes, edges, annotations });
+      setDiffView({ name: snap.name, diff });
+    },
+    [canonicalNodes, edges, annotations],
+  );
+
+  const deleteSnapshotById = useCallback(
+    (snapId: string) => {
+      if (!activeCanvasId) return;
+      setSnapshots(removeSnapshot(localStorage, activeCanvasId, snapId));
+    },
+    [activeCanvasId],
+  );
+
+  const healthIssues = useMemo(() => (canvasEnabled ? scanFlowHealth(canonicalNodes, edges) : []), [canvasEnabled, canonicalNodes, edges]);
+
+  const focusHealthIssue = useCallback(
+    (issue: HealthIssue) => {
+      const node = nodes.find((n) => n.id === issue.nodeId);
+      if (!node) return;
+      const width = node.measured?.width ?? (typeof node.style?.width === "number" ? node.style.width : 320);
+      const height = node.measured?.height ?? 420;
+      setSelNode(issue.nodeId);
+      setSelEdge(null);
+      setNodes((ns) => ns.map((item) => ({ ...item, selected: item.id === issue.nodeId })));
+      setFlashNode(node.id);
+      setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+        zoom: Math.min(1.05, Math.max(0.65, zoom)),
+        duration: 480,
+      });
+      window.setTimeout(() => setFlashNode((current) => (current === node.id ? null : current)), 1800);
+    },
+    [nodes, setCenter, setNodes, zoom],
+  );
+
   const stats = useMemo(
     () => ({ screens: nodes.filter((n) => n.type === "screen").length, links: edges.length }),
     [nodes, edges],
@@ -1274,6 +1543,24 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
           </div>
 
           <div className="fc-toolbar" aria-label="编辑器工具栏">
+            {canvasEnabled ? (
+              <div className="fc-toolbar-group" aria-label="画布">
+                <div className="fc-menu" ref={canvasMenuRef}>
+                  <button
+                    type="button"
+                    className={`fc-btn fc-canvas-toggle${canvasMenuOpen ? " is-active" : ""}`}
+                    onClick={openCanvasMenu}
+                    title="画布列表：切换 / 新建 / 重命名 / 复制 / 删除"
+                    aria-haspopup="menu"
+                    aria-expanded={canvasMenuOpen}
+                  >
+                    <Icon name="layers" size={14} />
+                    <span className="fc-canvas-name">{activeCanvas?.name ?? "画布"}</span>
+                    <span className="fc-menu-caret">▾</span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="fc-toolbar-group" aria-label="编辑">
               <button className="fc-icon-btn-inline" onClick={undo} title="撤销（Ctrl+Z）" aria-label="撤销" disabled={!canUndo}>
                 <Icon name="undo" size={15} />
@@ -1306,6 +1593,29 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                 <Icon name="search" size={15} />
               </button>
             </div>
+
+            {canvasEnabled ? (
+              <div className="fc-toolbar-group" aria-label="检查">
+                <button
+                  className={`fc-icon-btn-inline${healthOpen ? " is-active" : ""}`}
+                  onClick={() => { setHealthOpen((v) => !v); setSnapOpen(false); }}
+                  title="流程体检：死路界面 / 孤立界面 / 未接线主按钮 / 判断分支不全"
+                  aria-label="流程体检"
+                  aria-pressed={healthOpen}
+                >
+                  <Icon name="check" size={15} />
+                </button>
+                <button
+                  className={`fc-icon-btn-inline${snapOpen ? " is-active" : ""}`}
+                  onClick={() => { if (!snapOpen) refreshSnapshots(); setSnapOpen((v) => !v); setHealthOpen(false); }}
+                  title="快照与版本对比：拍摄 / 对比 / 恢复"
+                  aria-label="快照与版本对比"
+                  aria-pressed={snapOpen}
+                >
+                  <Icon name="stack" size={15} />
+                </button>
+              </div>
+            ) : null}
 
             <button
               type="button"
@@ -1425,6 +1735,92 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                 )}
               </div>
             ) : null}
+          </section>
+        ) : null}
+
+        {healthOpen ? (
+          <section className="fc-search-panel fc-health-panel" aria-label="流程体检">
+            <div className="fc-panel-head">
+              <b>流程体检</b>
+              <span>{healthIssues.length ? `${healthIssues.length} 个待确认项` : "没有发现问题"}</span>
+            </div>
+            {healthIssues.length ? (
+              <div className="fc-search-results">
+                {healthIssues.map((issue) => (
+                  <button key={issue.id} onClick={() => focusHealthIssue(issue)}>
+                    <b>【{HEALTH_KIND_LABEL[issue.kind]}】{issue.title}</b>
+                    <span>{issue.detail}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="fc-health-ok">流程看起来是通的：没有死路、孤立界面、未接线主按钮或缺失分支。</p>
+            )}
+          </section>
+        ) : null}
+
+        {snapOpen ? (
+          <section className="fc-search-panel fc-snap-panel" aria-label="快照与版本对比">
+            {diffView ? (
+              <>
+                <div className="fc-panel-head">
+                  <b>对比：「{diffView.name}」 → 当前画布</b>
+                  <button type="button" className="fc-chip-btn" onClick={() => setDiffView(null)}>← 返回快照列表</button>
+                </div>
+                {diffView.diff.identical ? (
+                  <p className="fc-health-ok">两个版本完全一致。</p>
+                ) : (
+                  <div className="fc-diff-list">
+                    {diffView.diff.screensAdded.length ? (
+                      <div className="fc-diff-sec"><b className="is-add">新增界面（{diffView.diff.screensAdded.length}）</b>{diffView.diff.screensAdded.map((t, i) => <span key={`a${i}`}>＋ {t}</span>)}</div>
+                    ) : null}
+                    {diffView.diff.screensRemoved.length ? (
+                      <div className="fc-diff-sec"><b className="is-del">删除界面（{diffView.diff.screensRemoved.length}）</b>{diffView.diff.screensRemoved.map((t, i) => <span key={`r${i}`}>－ {t}</span>)}</div>
+                    ) : null}
+                    {diffView.diff.screensRenamed.length ? (
+                      <div className="fc-diff-sec"><b>界面改名（{diffView.diff.screensRenamed.length}）</b>{diffView.diff.screensRenamed.map((r, i) => <span key={`n${i}`}>✎ {r.from} → {r.to}</span>)}</div>
+                    ) : null}
+                    {diffView.diff.edgesAdded.length ? (
+                      <div className="fc-diff-sec"><b className="is-add">新增连线（{diffView.diff.edgesAdded.length}）</b>{diffView.diff.edgesAdded.map((t, i) => <span key={`ea${i}`}>＋ {t}</span>)}</div>
+                    ) : null}
+                    {diffView.diff.edgesRemoved.length ? (
+                      <div className="fc-diff-sec"><b className="is-del">删除连线（{diffView.diff.edgesRemoved.length}）</b>{diffView.diff.edgesRemoved.map((t, i) => <span key={`er${i}`}>－ {t}</span>)}</div>
+                    ) : null}
+                    {diffView.diff.contentChanged.length ? (
+                      <div className="fc-diff-sec"><b>内容修改（{diffView.diff.contentChanged.length}）</b>{diffView.diff.contentChanged.map((c) => <span key={c.nodeId}>✎ {c.title}：{c.changes.join("；")}</span>)}</div>
+                    ) : null}
+                    {diffView.diff.annotationsChanged ? <div className="fc-diff-sec"><span>✎ 批注变化 {diffView.diff.annotationsChanged} 处</span></div> : null}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="fc-panel-head">
+                  <b>快照</b>
+                  <span>{snapshots.length} / 30</span>
+                  <button type="button" className="fc-btn fc-btn-primary fc-snap-take" onClick={takeSnapshot}>📷 拍摄快照</button>
+                </div>
+                <div className="fc-search-results">
+                  {snapshots.length ? (
+                    snapshots.map((s) => (
+                      <div key={s.id} className="fc-snap-row">
+                        <div className="fc-snap-meta">
+                          <b>{s.name}{s.auto ? <span className="fc-snap-auto">自动</span> : null}</b>
+                          <span>{new Date(s.createdAt).toLocaleString("zh-CN", { hour12: false })}</span>
+                        </div>
+                        <div className="fc-snap-actions">
+                          <button type="button" className="fc-chip-btn" onClick={() => compareSnapshot(s)}>对比</button>
+                          <button type="button" className="fc-chip-btn" onClick={() => restoreSnapshot(s)}>恢复</button>
+                          <button type="button" className="fc-chip-btn" onClick={() => deleteSnapshotById(s.id)}>删除</button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p>还没有快照。切换画布或恢复快照前会自动存一份，也可以手动拍摄。</p>
+                  )}
+                </div>
+              </>
+            )}
           </section>
         ) : null}
 
@@ -1609,6 +2005,45 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         />
 
         {menuOpen ? <div className="fc-menu-mask" onClick={() => setMenuOpen(false)} /> : null}
+        {canvasMenuOpen ? <div className="fc-menu-mask" onClick={() => setCanvasMenuOpen(false)} /> : null}
+        {canvasMenuOpen && canvasMenuPosition
+          ? createPortal(
+              <div className="fc-menu-panel fc-canvas-panel" role="menu" style={{ left: canvasMenuPosition.left, top: canvasMenuPosition.top, minWidth: Math.max(280, canvasMenuPosition.width) }}>
+                {canvases.map((c) => (
+                  <div key={c.id} className={`fc-canvas-row${c.id === activeCanvasId ? " is-active" : ""}`}>
+                    {renamingCanvasId === c.id ? (
+                      <input
+                        autoFocus
+                        defaultValue={c.name}
+                        aria-label="画布名称"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renameCanvas(c.id, (e.target as HTMLInputElement).value);
+                          if (e.key === "Escape") setRenamingCanvasId(null);
+                        }}
+                        onBlur={(e) => renameCanvas(c.id, e.target.value)}
+                      />
+                    ) : (
+                      <button type="button" className="fc-canvas-open" role="menuitem" onClick={() => switchCanvas(c.id)}>
+                        <b>{c.name}</b>
+                        {c.id === activeCanvasId ? <span className="fc-canvas-current">当前</span> : null}
+                      </button>
+                    )}
+                    <span className="fc-canvas-actions">
+                      <button type="button" title="重命名" aria-label={`重命名 ${c.name}`} onClick={() => setRenamingCanvasId(c.id)}>✎</button>
+                      <button type="button" title="复制画布" aria-label={`复制 ${c.name}`} onClick={() => duplicateCanvas(c.id)}>⧉</button>
+                      {confirmDeleteCanvasId === c.id ? (
+                        <button type="button" className="fc-canvas-del-armed" title="再次点击确认删除" onClick={() => deleteCanvas(c.id)}>确认删除</button>
+                      ) : (
+                        <button type="button" title="删除画布" aria-label={`删除 ${c.name}`} disabled={canvases.length <= 1} onClick={() => setConfirmDeleteCanvasId(c.id)}>🗑</button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+                <button type="button" role="menuitem" className="fc-canvas-new" onClick={createCanvas}>＋ 新建画布</button>
+              </div>,
+              document.body,
+            )
+          : null}
         {toast ? <div className="fc-toast">{toast}</div> : null}
 
         {preview ? <Preview nodes={nodes} edges={edges} startId={previewStart} onExit={() => setPreview(false)} /> : null}

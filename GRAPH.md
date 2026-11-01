@@ -45,12 +45,15 @@ flowcraft/
 │     ├─ exportFile.ts         JSON / HTML 文本下载
 │     ├─ exportHtml.ts         单文件 HTML 原型导出（内嵌播放器：条件求值 / 校验 / 动效）
 │     ├─ prototypeLogic.ts     原型逻辑共享模块：条件求值、输入校验、跳转目标解析
+│     ├─ canvasStore.ts        多画布存储：画布列表/活动画布/数据键、legacy 迁移
+│     ├─ snapshotStore.ts      版本快照存储 + 两份流程的结构化 diff
+│     ├─ flowHealth.ts         流程健康检查：死路/孤立/未接线主按钮/分支不全
 │     ├─ exportCanvas.ts       PNG / SVG / PDF 画布导出
 │     ├─ exportTypes.ts        画布导出选项与结果类型
 │     ├─ exportGeometry.ts     节点尺寸解析与导出包围盒
 │     ├─ exportLayout.ts       视口适配、PDF 排版、文件名
 │     └─ history.ts            增量撤销/重做快照
-├─ tests/                      17 个 Node 测试文件（几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、基准图等）
+├─ tests/                      20 个 Node 测试文件（几何、缓存、导出、批注、模板、模板包、原型逻辑、画布、快照、健康检查、备注布局、基准图等）
 ├─ docs/                       README 截图、示例原型与性能基线记录
 ├─ public/                     favicon 与图标资源
 └─ .ego-edge-routing-qa-20261101/  连线路由复测脚本（3 个）
@@ -148,6 +151,20 @@ graph TD
 | 导入/导出 | `src/flow/templateMarket.ts` / `buildTemplateBundle`、`parseTemplateBundle` |
 | 面板交互 | `src/flow/Palette.tsx` / 搜索、分类、导入、导出、空态 |
 | 本地持久化 | `App.tsx` / `TEMPLATE_STORAGE_KEY` |
+
+### 多画布 / 快照 / 体检（2026-11-02 完成）
+
+| 能力 | 文件 / 符号 |
+| --- | --- |
+| 画布存储与迁移 | `src/flow/canvasStore.ts` / `ensureCanvases`（legacy 零拷贝登记）、`readCanvasData`、`writeCanvasData`、`uniqueCanvasName` |
+| 画布操作 | `src/App.tsx` / `switchCanvas`（切换前自动快照）、`createCanvas`、`renameCanvas`、`duplicateCanvas`、`deleteCanvas`（两步确认） |
+| 画布切换器 UI | `src/App.tsx` 顶栏 / `.fc-canvas-toggle` + portal 面板 |
+| 快照存储 | `src/flow/snapshotStore.ts` / `addSnapshot`（≤30 裁剪）、`readSnapshots`、`removeSnapshot` |
+| 流程对比 | `src/flow/snapshotStore.ts` / `diffFlows`（界面增删/改名、连线增删、元素/条件/批注变化，可读文案） |
+| 快照面板 UI | `src/App.tsx` / `.fc-snap-panel`（拍摄 / 对比 / 恢复 / 删除；恢复前自动存快照） |
+| 健康检查 | `src/flow/flowHealth.ts` / `scanFlowHealth`（四类问题，按类型分组）；`src/App.tsx` / `.fc-health-panel`，点击定位节点 |
+
+约定：`flowcraft.flow.v1` 始终是活动画布的镜像；切换画布 = 归档当前数据到 `canvas.data.<旧id>` + 自动快照 + 读入目标数据。画布上限 20、快照上限 30。
 
 ### 原型逻辑（2026-11-02 完成：条件求值 / 输入校验 / 切换动效）
 
@@ -250,7 +267,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 171 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
+npm test          # 196 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -310,13 +327,14 @@ npm run dev -- --port 5177
 
 下一步建议（按性价比）：
 
-1. 流程健康检查：死路界面 / 孤立界面 / 未接线主按钮一键扫描。
-2. 多画布与版本对比；若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
-3. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
+1. 若要协作，单独设计后端、权限和冲突合并（见 `docs/协作方案设计.md`），不在当前阶段假装实现。
+2. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
 
 已完成（2026-11-01）：`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描改为 `edgeStoreSelectors.ts` 共享派生（WeakMap 按 store 对象记忆，一次更新全图只派生一次；200 节点/240 边确定性微基准 2.68→0.06 ms/帧，Ego A/B 电商示例 14 边 path d 校验和与标签 lane 逐字节一致）；边路由 LRU 扩容至 2048，并对几何数组实例做了序列缓存。
 
 已完成（2026-11-02）：模板预览缩略图（`templateThumbnails.ts` 自包含 SVG，纯函数无 DOM 依赖）+ 内置行业模板包（`templatePacks.ts` 3 个业务链路包，点击/拖入整体插入、一次撤销回退）。Ego round6 回归 PASS：电商示例 14 边锚点逐字节一致、调色板 6 缩略图 + 3 包卡片、搜索过滤、点击插入 12/14→21/24 与拖入 HR 包均一次撤销恢复。
+
+已完成（2026-11-02）：原型逻辑（`prototypeLogic.ts` 共享求值器，Ego round7 42/42 PASS）；多画布管理、版本快照与对比、流程健康检查（`canvasStore.ts` / `snapshotStore.ts` / `flowHealth.ts`，Ego round8 22/22 PASS）。
 
 ---
 
