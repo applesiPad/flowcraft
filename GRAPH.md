@@ -218,7 +218,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 128 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器、回边平衡、基准图
+npm test          # 140 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -242,6 +242,7 @@ npm run dev -- --port 5177
 14. 选中连线 → 修改出发热点与线路走向；确认路径立即变化、撤销可恢复、导出的 JSON 保留 `data.routeMode`。
 15. 可视区裁剪：工具栏裁剪按钮切换后刷新仍保持；大图局部视角拖动节点应流畅无卡死。
 16. 裁剪开启时导出 PNG / 打印：内容必须包含视口外的全部节点（导出保护 `withFullRender`），导出后画布恢复裁剪渲染。
+17. 元素边界约束：把界面元素向屏幕外猛拖 / 猛拉缩放把手，元素应贴容器缘线停下（不被 `overflow: hidden` 裁掉）；属性面板 X/Y/宽 输入越界值时同样被钳回容器。
 
 ## 8. 功能状态
 
@@ -273,15 +274,14 @@ npm run dev -- --port 5177
 - 可视区裁剪开启时，视口外节点不在 DOM 中；任何依赖克隆实时 DOM 的功能（PNG/SVG/PDF 导出、打印）必须先走 `withFullRender`。全图 fitView 时裁剪没有 DOM 收益，medium 级图挂载会慢约 3s（见基线文档）。
 - 模板市场是本地模板库，不涉及远程服务器或账号体系。
 - 导出的单文件原型是静态快照，不带输入校验、条件求值或动效。
-- `.fc-screen` 使用 `overflow: hidden`，元素或把手越出手机屏幕容器时会被裁剪；后续可加拖拽/缩放边界约束。
+- `.fc-screen` 使用 `overflow: hidden`；元素拖拽/缩放与属性面板数字输入都经 `clampMoveBox`/`clampResizeBox` 钳制在 `.fc-body` 内容区内（Ego 实测越界拖动 1200px 后贴边不越界）。自由布局高度随内容增长，纵向不封顶。
 
 下一步建议（按性价比）：
 
-1. 为元素拖拽 / 缩放增加屏幕容器边界约束，避免越界把手被裁剪。
+1. `FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描 store，可改为按 target+handle 预分组；边路由 LRU 512 在 200+ 节点图上会抖动。
 2. 增加模板预览缩略图与内置行业模板包。
 3. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
 4. 若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
-5. （性能后续）`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描 store，可改为按 target+handle 预分组；边路由 LRU 512 在 200+ 节点图上会抖动。
 
 ---
 

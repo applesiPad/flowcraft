@@ -3,6 +3,98 @@ import type { ElementBox } from "./types";
 /** 可拖拽的方位角：四角 + 四边 */
 export type ResizeHandlePos = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
+/**
+ * 界面卡片内容区（界面本地 px，坐标原点 = .fc-body 定位盒左上角）。
+ * `.fc-screen` 是 `overflow: hidden`，越界元素与缩放把手会被裁掉且无法再操作，
+ * 因此拖拽/缩放都要把盒子收进这个区域。
+ * 自由布局的页面高度随内容增长，所以调用方可以把 bottom 设为 Infinity，
+ * 只约束横向与顶部；固定视口（如导出/预览）才给出有限 bottom。
+ */
+export type ContainerRegion = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+/** 手机界面卡片内容区宽度：320px 卡片 - 左右 1px 边框 */
+export const SCREEN_BODY_WIDTH = 318;
+
+/** 无法实测容器时的默认内容区（界面本地 px；自由布局高度随内容增长，bottom 不封顶） */
+export const DEFAULT_ELEMENT_REGION: ContainerRegion = {
+  left: 0,
+  top: 0,
+  right: SCREEN_BODY_WIDTH,
+  bottom: Number.POSITIVE_INFINITY,
+};
+
+/** 由卡片实测尺寸得到内容区（本地像素 = 屏幕像素 / 画布缩放） */
+export function regionForContainer(widthPx: number, heightPx: number, zoom = 1, growableHeight = true): ContainerRegion {
+  const z = zoom > 0 ? zoom : 1;
+  return {
+    left: 0,
+    top: 0,
+    right: Math.round((widthPx > 0 ? widthPx : SCREEN_BODY_WIDTH) / z),
+    bottom: growableHeight ? Number.POSITIVE_INFINITY : Math.round(heightPx / z),
+  };
+}
+
+/** 尽力把盒子收进区域：宽度放得下就完整包含，放不下就贴左缘（调用方已限制最大宽度） */
+function clampAxis(pos: number, size: number, start: number, end: number): number {
+  if (size >= end - start) return start;
+  return Math.min(Math.max(pos, start), end - size);
+}
+
+/**
+ * 拖动：尺寸不变，位置收进容器。
+ * 容器装不下该宽度时贴左缘，保证至少不会出现「左右都看不见」。
+ */
+export function clampMoveBox(box: ElementBox, region: ContainerRegion): ElementBox {
+  const out: ElementBox = {
+    x: Math.round(clampAxis(box.x, box.w, region.left, region.right)),
+    y: Math.round(clampAxis(box.y, box.h ?? 64, region.top, region.bottom)),
+    w: box.w,
+  };
+  if (box.h !== undefined) out.h = box.h;
+  return out;
+}
+
+/**
+ * 缩放：在 resizeBox 的结果上再收进容器，禁止把边/角拉出可视区。
+ * 语义是「边界停止」：被拖的一侧钳在容器缘线上，对侧边缘保持不动；
+ * 剩余空间不足最小尺寸时，优先移动对侧而不是压缩到 0。
+ */
+export function clampResizeBox(next: ElementBox, region: ContainerRegion, opts: ResizeOptions = {}): ElementBox {
+  const minW = opts.minWidth ?? DEFAULT_MIN_W;
+  const minH = opts.minHeight ?? DEFAULT_MIN_H;
+
+  let left = Math.max(next.x, region.left);
+  let right = Math.min(next.x + next.w, region.right);
+  if (right - left < minW) {
+    if (next.x <= region.left) right = Math.min(region.left + minW, region.right);
+    else left = Math.max(right - minW, region.left);
+  }
+  const w = Math.round(Math.max(minW, right - left));
+
+  const hasH = next.h !== undefined;
+  let top = next.y;
+  let bottom = next.y + (next.h ?? 64);
+  if (hasH) {
+    top = Math.max(next.y, region.top);
+    bottom = Math.min(next.y + (next.h as number), region.bottom);
+    if (bottom - top < minH) {
+      if (next.y <= region.top) bottom = region.top + minH;
+      else top = Math.max(bottom - minH, region.top);
+    }
+  } else {
+    top = Math.max(next.y, region.top);
+  }
+
+  const out: ElementBox = { x: Math.round(left), y: Math.round(top), w };
+  if (hasH) out.h = Math.round(bottom - top);
+  return out;
+}
+
 export type ResizeOptions = {
   minWidth?: number;
   minHeight?: number;

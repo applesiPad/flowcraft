@@ -5,6 +5,10 @@ import { createAnnotation, getAnnotationsByTarget } from "./annotations";
 import type { Annotation, AnnotationColor, AnnotationTargetType } from "./annotations";
 import type { DecisionData, NoteAnchorSide, NoteData, ScreenData, ScreenElement } from "./types";
 import { normalizeEdgeRouteMode } from "./edgeRouting";
+import { clampMoveBox, clampResizeBox, DEFAULT_ELEMENT_REGION } from "./elementEditor";
+
+/** 属性面板的数字输入以界面本地像素为单位（zoom=1 视角下的默认内容区） */
+const EL_REGION = DEFAULT_ELEMENT_REGION;
 
 const elementKinds: { kind: ScreenElement["kind"]; label: string }[] = [
   { kind: "button", label: "按钮" },
@@ -1047,7 +1051,7 @@ export function Inspector(props: Props) {
                         <input
                           type="number"
                           value={Math.round(el.box?.x ?? 0)}
-                          onChange={(e) => props.onPatchElement(node.id, el.id, { box: { x: Number(e.target.value), y: el.box?.y ?? 0, w: el.box?.w ?? 288, h: el.box?.h } }, `element:${node.id}:${el.id}:x`)}
+                          onChange={(e) => props.onPatchElement(node.id, el.id, { box: clampMoveBox({ x: Number(e.target.value), y: el.box?.y ?? 0, w: el.box?.w ?? 288, h: el.box?.h }, EL_REGION) }, `element:${node.id}:${el.id}:x`)}
                         />
                       </label>
                       <label>
@@ -1055,7 +1059,7 @@ export function Inspector(props: Props) {
                         <input
                           type="number"
                           value={Math.round(el.box?.y ?? 0)}
-                          onChange={(e) => props.onPatchElement(node.id, el.id, { box: { x: el.box?.x ?? 16, y: Number(e.target.value), w: el.box?.w ?? 288, h: el.box?.h } }, `element:${node.id}:${el.id}:y`)}
+                          onChange={(e) => props.onPatchElement(node.id, el.id, { box: clampMoveBox({ x: el.box?.x ?? 16, y: Number(e.target.value), w: el.box?.w ?? 288, h: el.box?.h }, EL_REGION) }, `element:${node.id}:${el.id}:y`)}
                         />
                       </label>
                       <label>
@@ -1063,7 +1067,7 @@ export function Inspector(props: Props) {
                         <input
                           type="number"
                           value={Math.round(el.box?.w ?? 288)}
-                          onChange={(e) => props.onPatchElement(node.id, el.id, { box: { x: el.box?.x ?? 16, y: el.box?.y ?? 16, w: Number(e.target.value), h: el.box?.h } }, `element:${node.id}:${el.id}:w`)}
+                          onChange={(e) => props.onPatchElement(node.id, el.id, { box: clampResizeBox({ x: el.box?.x ?? 16, y: el.box?.y ?? 16, w: Number(e.target.value), h: el.box?.h }, EL_REGION) }, `element:${node.id}:${el.id}:w`)}
                         />
                       </label>
                     </div>

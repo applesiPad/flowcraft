@@ -1,6 +1,17 @@
 import { createContext, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
-import { resizeBox, snapDelta, type AlignGuide, type AlignGuideInput, type ResizeHandlePos } from "./elementEditor";
+import {
+  clampMoveBox,
+  clampResizeBox,
+  DEFAULT_ELEMENT_REGION,
+  regionForContainer,
+  resizeBox,
+  snapDelta,
+  type AlignGuide,
+  type AlignGuideInput,
+  type ContainerRegion,
+  type ResizeHandlePos,
+} from "./elementEditor";
 import type { ElementBox, ScreenData, ScreenElement } from "./types";
 
 const RESIZE_HANDLES: { pos: ResizeHandlePos; cls: string; cursor: string }[] = [
@@ -214,6 +225,14 @@ export function ScreenView({
     return out;
   }, [zoom]);
 
+  /** 当前 .fc-body 定位盒 → 界面本地像素的容器区域（自由布局高度可增长，只约束横向与顶部） */
+  const currentRegion = useCallback((): ContainerRegion => {
+    const body = bodyRef.current;
+    if (!body) return DEFAULT_ELEMENT_REGION;
+    const bounds = body.getBoundingClientRect();
+    return regionForContainer(bounds.width, bounds.height, zoom, true);
+  }, [zoom]);
+
   /** 计算某元素当前位置与其它元素的精确对齐参考线 */
   const guidesForElement = useCallback(
     (moving: AlignGuideInput, others: readonly AlignGuideInput[]) => {
@@ -250,6 +269,8 @@ export function ScreenView({
       const others: AlignGuideInput[] = elements
         .filter((o) => o.id !== el.id && o.box)
         .map((o) => ({ x: o.box!.x, y: o.box!.y, w: o.box!.w, h: o.box!.h ?? 64 }));
+      // 容器区域在拖拽开始时捕获一次：期间宽度与缩放不变，避免每次 move 强制回流
+      const region = currentRegion();
 
       const onMove = (e: PointerEvent) => {
         const rawX = (start.x + (e.clientX - ox) / z) / 4;
@@ -257,10 +278,10 @@ export function ScreenView({
         const gridX = Math.round(rawX) * 4;
         const gridY = Math.round(rawY) * 4;
         const snapped = snapDelta({ dx: gridX - start.x, dy: gridY - start.y }, { x: gridX, y: gridY, w: start.w, h: start.h ?? 64 }, others, 6);
-        const nx = Math.max(0, Math.round((start.x + snapped.dx) / 4) * 4);
-        const ny = Math.max(0, Math.round((start.y + snapped.dy) / 4) * 4);
-        onMoveElement?.(el.id, { x: nx, y: ny, w: start.w, h: start.h });
-        setGuides(guidesForElement({ x: nx, y: ny, w: start.w, h: start.h ?? 64 }, others));
+        const raw: ElementBox = { x: Math.round((start.x + snapped.dx) / 4) * 4, y: Math.round((start.y + snapped.dy) / 4) * 4, w: start.w, h: start.h };
+        const clamped = clampMoveBox(raw, region);
+        onMoveElement?.(el.id, clamped);
+        setGuides(guidesForElement({ x: clamped.x, y: clamped.y, w: clamped.w, h: clamped.h ?? 64 }, others));
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
@@ -271,7 +292,7 @@ export function ScreenView({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [elements, free, guidesForElement, interactive, measureAll, onFreezeLayout, onMoveElement, preview, zoom],
+    [currentRegion, elements, free, guidesForElement, interactive, measureAll, onFreezeLayout, onMoveElement, preview, zoom],
   );
 
   /** 拖拽方位角把手缩放元素 */
@@ -289,11 +310,12 @@ export function ScreenView({
       const oy = event.clientY;
       const z = zoom > 0 ? zoom : 1;
       setResizing(el.id);
+      const region = currentRegion();
       const onMove = (e: PointerEvent) => {
         const dx = Math.round((e.clientX - ox) / z);
         const dy = Math.round((e.clientY - oy) / z);
         const next = resizeBox(box, handle, dx, dy, { minWidth: 16, minHeight: 12 });
-        onResizeElement?.(el.id, next);
+        onResizeElement?.(el.id, clampResizeBox(next, region, { minWidth: 16, minHeight: 12 }));
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
@@ -303,7 +325,7 @@ export function ScreenView({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [interactive, preview, onResizeElement, zoom],
+    [currentRegion, interactive, preview, onResizeElement, zoom],
   );
 
   const layout = useMemo(() => {

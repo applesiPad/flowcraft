@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  clampMoveBox,
+  clampResizeBox,
+  DEFAULT_ELEMENT_REGION,
   detectAlignGuides,
   moveElementZ,
+  regionForContainer,
   resizeBox,
+  SCREEN_BODY_WIDTH,
   snapDelta,
   type AlignGuideInput,
+  type ContainerRegion,
 } from "../src/flow/elementEditor.ts";
 import type { ElementBox } from "../src/flow/types.ts";
 
@@ -178,4 +184,77 @@ test("moveElementZ 不修改原数组", () => {
   const els = makeElements(["a", "b", "c"]);
   moveElementZ(els, "a", "bring-to-front");
   assert.deepEqual(els.map((e) => e.id), ["a", "b", "c"]);
+});
+
+/* ---------- 容器边界约束：clampMoveBox / clampResizeBox / regionForContainer ---------- */
+
+const region: ContainerRegion = { left: 0, top: 0, right: 318, bottom: Number.POSITIVE_INFINITY };
+
+test("clampMoveBox 右缘越界时整体收回容器内", () => {
+  const out = clampMoveBox({ x: 280, y: 40, w: 100 }, region);
+  assert.deepEqual(out, { x: 218, y: 40, w: 100 });
+});
+
+test("clampMoveBox 负坐标收回左上角", () => {
+  const out = clampMoveBox({ x: -36, y: -12, w: 88, h: 24 }, region);
+  assert.deepEqual(out, { x: 0, y: 0, w: 88, h: 24 });
+});
+
+test("clampMoveBox 宽度超出容器时贴左缘而不是居中", () => {
+  const out = clampMoveBox({ x: 100, y: 0, w: 400 }, region);
+  assert.deepEqual(out, { x: 0, y: 0, w: 400 });
+});
+
+test("clampMoveBox 自由布局高度可增长：y 不受 bottom 限制", () => {
+  const out = clampMoveBox({ x: 10, y: 9999, w: 100, h: 60 }, region);
+  assert.equal(out.y, 9999);
+});
+
+test("clampMoveBox 固定视口 bottom 也参与钳制", () => {
+  const fixed: ContainerRegion = { left: 0, top: 0, right: 318, bottom: 500 };
+  const out = clampMoveBox({ x: 10, y: 480, w: 100, h: 64 }, fixed);
+  assert.equal(out.y, 436);
+});
+
+test("clampResizeBox 东把手拖过右缘时宽度封顶在容器内", () => {
+  const raw = resizeBox({ x: 200, y: 40, w: 100, h: 50 }, "e", 120, 0);
+  const out = clampResizeBox(raw, region, { minWidth: 16, minHeight: 12 });
+  assert.equal(out.x, 200);
+  assert.equal(out.w, 118); // 318 - 200
+});
+
+test("clampResizeBox 西把手拖出左缘时左缘收 0 且右缘保持不动", () => {
+  const raw = resizeBox({ x: 40, y: 0, w: 100, h: 40 }, "w", -80, 0, { minWidth: 16 });
+  const out = clampResizeBox(raw, region, { minWidth: 16, minHeight: 12 });
+  assert.equal(out.x, 0);
+  assert.equal(out.w, 140); // 右缘 40+100 保持
+});
+
+test("clampResizeBox 宽度超过容器时收缩到容器宽", () => {
+  const out = clampResizeBox({ x: 0, y: 10, w: 500, h: 40 }, region, { minWidth: 16, minHeight: 12 });
+  assert.equal(out.w, 318);
+  assert.equal(out.x, 0);
+});
+
+test("clampResizeBox 保持最小尺寸下限，不因钳制产生 0 宽", () => {
+  const out = clampResizeBox({ x: 316, y: 4, w: 6, h: 30 }, region, { minWidth: 16, minHeight: 12 });
+  assert.equal(out.w, 16);
+  assert.equal(out.x, 302); // 318 - 16
+});
+
+test("regionForContainer 按画布缩放换算本地像素", () => {
+  const r = regionForContainer(318, 640, 0.5, true);
+  assert.equal(r.right, 636);
+  assert.equal(r.bottom, Number.POSITIVE_INFINITY);
+});
+
+test("regionForContainer 固定视口模式给出本地高度", () => {
+  const r = regionForContainer(318, 640, 2, false);
+  assert.equal(r.right, 159);
+  assert.equal(r.bottom, 320);
+});
+
+test("DEFAULT_ELEMENT_REGION 与卡片实测宽度一致", () => {
+  assert.equal(DEFAULT_ELEMENT_REGION.right, SCREEN_BODY_WIDTH);
+  assert.equal(SCREEN_BODY_WIDTH, 318);
 });
