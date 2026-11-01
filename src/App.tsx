@@ -46,6 +46,7 @@ import {
   type FlowHistoryEntry,
 } from "./flow/history";
 import { HOTSPOT_IN } from "./flow/types";
+import { benchDomCounts, buildBenchFlow, measureFps, parseBenchLevel, type BenchLevel } from "./flow/benchGraph";
 import type { ElementBox, ScreenData, ScreenElement, ScreenTemplate } from "./flow/types";
 import {
   deleteAnnotation,
@@ -67,6 +68,8 @@ const edgeTypes = { flow: FlowEdge };
 const STORAGE_KEY = "flowcraft.flow.v1";
 const TEMPLATE_STORAGE_KEY = "flowcraft.templates.v1";
 const ANNOTATION_STORAGE_KEY = "flowcraft.annotations.v1";
+/** 可视区裁剪开关持久化（2026-11-01 基线测量后默认开启，见 docs/perf-baseline-2026-11-01.md） */
+const CULL_STORAGE_KEY = "flowcraft.cull.v1";
 const EMPTY_HOTSPOT_KEYS = new Set<string>();
 
 type SearchItem = {
@@ -100,10 +103,33 @@ const markerFor = (theme: Theme) => ({ type: MarkerType.ArrowClosed, color: edge
 function uid(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 1e3).toString(36)}`;
 }
-function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
+function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: boolean; benchMode?: BenchLevel | null }) {
+  const bench = useMemo(() => (benchMode ? buildBenchFlow(benchMode) : null), [benchMode]);
   const [theme, setTheme] = useState<Theme>(readTheme);
-  const [nodes, setNodes, onNodesChange] = useNodesState(exampleMode ? [] : initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(exampleMode ? [] : initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(exampleMode || bench ? [] : initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(exampleMode || bench ? [] : initialEdges);
+  const [cull, setCull] = useState<boolean>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      // 压测入口用 URL 参数强制指定；正常入口读用户偏好，默认开
+      if (params.get("bench")) return params.get("cull") === "1";
+      const stored = localStorage.getItem(CULL_STORAGE_KEY);
+      return stored !== "0";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    if (window.__fcBench) window.__fcBench.cull = cull;
+    if (benchMode) return; // 压测模式不落偏好
+    try {
+      localStorage.setItem(CULL_STORAGE_KEY, cull ? "1" : "0");
+    } catch {
+      /* 隐私模式下忽略 */
+    }
+  }, [cull, benchMode]);
+  // 导出/打印克隆的是实时 DOM：裁剪开启时必须先临时全量渲染，否则视口外内容会缺失
+  const [renderAllForExport, setRenderAllForExport] = useState(false);
   const [showHotspots, setShowHotspots] = useState(true);
   const [preview, setPreview] = useState(false);
   const [previewStart, setPreviewStart] = useState<string | null>(null);
@@ -129,7 +155,7 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const toastTimer = useRef<number | null>(null);
 
-  const { screenToFlowPosition, getViewport, fitView, setViewport, setCenter } = useReactFlow();
+  const { screenToFlowPosition, getViewport, getNodes, fitView, setViewport, setCenter } = useReactFlow();
   const zoom = useStore((st) => st.transform[2]);
   const canonicalNodes = useMemo(() => layoutAnchoredNotes(nodes), [nodes]);
   const markerEnd = useMemo(() => markerFor(theme), [theme]);
@@ -174,6 +200,45 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
 
   /* ---------- 本地持久化 ---------- */
   useEffect(() => {
+    if (bench && benchMode) {
+      // 压测图是一次性合成数据：直接注入，不读写 localStorage，避免污染真实存档。
+      const mountedAt = performance.now();
+      setNodes(bench.nodes.map((node) => ({ ...node })));
+      setEdges(bench.edges.map((edge) => ({ ...edge })));
+      window.__fcBench = {
+        level: benchMode,
+        cull,
+        nodeCount: bench.nodes.length,
+        edgeCount: bench.edges.length,
+        mountedAt,
+        fitDoneAt: 0,
+        mountEpoch: Date.now(),
+        fps: null,
+        fpsAt: 0,
+        fpsLabel: "",
+        measureFps,
+        startFps: (seconds: number, label: string) => {
+          void measureFps(seconds).then((sample) => {
+            if (window.__fcBench) {
+              window.__fcBench.fps = sample;
+              window.__fcBench.fpsLabel = label;
+              window.__fcBench.fpsAt = Date.now();
+            }
+          });
+        },
+        domCounts: benchDomCounts,
+        markFit: () => {
+          if (window.__fcBench) {
+            window.__fcBench.fitDoneAt = performance.now();
+            window.__fcBench.mountEpoch = Date.now();
+          }
+          return window.__fcBench?.fitDoneAt ?? 0;
+        },
+      };
+      window.setTimeout(() => fitView({ padding: 0.1, minZoom: 0.08, maxZoom: 0.9 }), 420);
+      window.setTimeout(() => window.__fcBench?.markFit?.(), 700);
+      return;
+    }
     if (exampleMode) {
       setNodes(initialNodes.map((node) => ({ ...node })));
       setEdges(initialEdges.map((edge) => ({ ...edge })));
@@ -208,7 +273,7 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (exampleMode) return;
+    if (exampleMode || bench) return;
     const t = window.setTimeout(() => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes: canonicalNodes, edges, annotations }));
@@ -827,6 +892,30 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
     }
   }, [edges, nodes, showToast]);
 
+  /**
+   * 裁剪开启时 DOM 只有视口内节点；导出/打印克隆实时 DOM 前，
+   * 先临时全量渲染并等 React Flow 测完所有节点，结束后恢复用户开关。
+   */
+  const withFullRender = useCallback(async (run: () => Promise<void> | void) => {
+    if (!cull) {
+      await run();
+      return;
+    }
+    setRenderAllForExport(true);
+    try {
+      const deadline = performance.now() + 6000;
+      for (;;) {
+        await new Promise((resolve) => window.setTimeout(resolve, 80));
+        const measured = getNodes().filter((n) => (n.measured?.width ?? 0) > 0 && (n.measured?.height ?? 0) > 0).length;
+        if (measured >= canonicalNodes.length || performance.now() > deadline) break;
+      }
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      await run();
+    } finally {
+      setRenderAllForExport(false);
+    }
+  }, [cull, canonicalNodes.length, getNodes]);
+
   const exportCanvasFile = useCallback(async (format: ExportFormat) => {
     if (exporting) return;
     setExporting(format);
@@ -834,24 +923,26 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
     const labels: Record<ExportFormat, string> = { png: "PNG 图片", svg: "SVG 矢量图", pdf: "PDF 文档" };
     showToast(`正在导出 ${labels[format]}…`);
     try {
-      const { exportCanvas } = await import("./flow/exportCanvas");
-      const result: CanvasExportResult = await exportCanvas(canonicalNodes, {
-        format,
-        title: "FlowCraft-流程图",
-        pixelRatio: 2,
-        onProgress: (message) => showToast(message),
+      await withFullRender(async () => {
+        const { exportCanvas } = await import("./flow/exportCanvas");
+        const result: CanvasExportResult = await exportCanvas(canonicalNodes, {
+          format,
+          title: "FlowCraft-流程图",
+          pixelRatio: 2,
+          onProgress: (message) => showToast(message),
+        });
+        const sizeText = result.bytes >= 1024 * 1024
+          ? `${(result.bytes / 1024 / 1024).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(result.bytes / 1024))} KB`;
+        showToast(`已导出 ${labels[format]}：${result.filename}（${sizeText}）`);
       });
-      const sizeText = result.bytes >= 1024 * 1024
-        ? `${(result.bytes / 1024 / 1024).toFixed(1)} MB`
-        : `${Math.max(1, Math.round(result.bytes / 1024))} KB`;
-      showToast(`已导出 ${labels[format]}：${result.filename}（${sizeText}）`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "未知错误";
       showToast(`导出 ${labels[format]} 失败：${message}`);
     } finally {
       setExporting(null);
     }
-  }, [canonicalNodes, exporting, showToast]);
+  }, [canonicalNodes, exporting, showToast, withFullRender]);
 
   const exportTemplates = useCallback(() => {
     const bundle = buildTemplateBundle(customTemplates);
@@ -906,9 +997,13 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
   const printFlow = useCallback(() => {
     // 按 A3 横向纸张比例把整图缩放好，再交给系统打印（可直接另存为 PDF）
     const viewport = getViewportForBounds(getNodesBounds(canonicalNodes), 1587, 1122, 0.15, 2, 0.05);
-    setViewport(viewport);
-    window.setTimeout(() => window.print(), 420);
-  }, [canonicalNodes, setViewport]);
+    void withFullRender(async () => {
+      setViewport(viewport);
+      // 等 transform 动画落位；window.print() 在 Chromium 里同步阻塞，DOM 保持全量
+      await new Promise((resolve) => window.setTimeout(resolve, 420));
+      window.print();
+    });
+  }, [canonicalNodes, setViewport, withFullRender]);
 
   const addAnnotation = useCallback((annotation: Annotation) => {
     setAnnotations((items) => items.some((item) => item.id === annotation.id) ? items : items.concat(annotation));
@@ -1149,6 +1244,9 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
               <button className="fc-icon-btn-inline" onClick={autoLayout} title="自动整理节点位置" aria-label="整理布局">
                 <Icon name="layout" size={15} />
               </button>
+              <button className={`fc-icon-btn-inline fc-cull-toggle${cull ? " is-active" : ""}`} onClick={() => setCull((v) => !v)} title="可视区裁剪：只渲染窗口内的节点与连线，大图更流畅（导出/打印时自动全量渲染）" aria-label="可视区裁剪" aria-pressed={cull}>
+                <Icon name="crop" size={15} />
+              </button>
               <button className={`fc-icon-btn-inline${showHotspots ? " is-active" : ""}`} onClick={() => setShowHotspots((v) => !v)} title="显示或隐藏可点击热点" aria-label="显示热点" aria-pressed={showHotspots}>
                 <Icon name="link" size={15} />
               </button>
@@ -1313,6 +1411,7 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
               onConnectEnd={onConnectEnd}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
+              onlyRenderVisibleElements={cull && !renderAllForExport}
               defaultEdgeOptions={{ type: "flow", markerEnd }}
               connectionMode={ConnectionMode.Loose}
               proOptions={{ hideAttribution: true }}
@@ -1376,6 +1475,19 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
                     载入示例流程
                   </button>
                 </div>
+              </div>
+            ) : null}
+
+            {bench && benchMode ? (
+              <div className="fc-hint" style={{ top: 12, bottom: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+                <strong>性能基线 {benchMode}</strong>
+                <span>
+                  {bench.nodes.length} 节点 / {bench.edges.length} 边
+                </span>
+                <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                  <input type="checkbox" checked={cull} onChange={(e) => setCull(e.target.checked)} />
+                  可视区裁剪
+                </label>
               </div>
             ) : null}
 
@@ -1460,10 +1572,12 @@ function CanvasApp({ exampleMode = false }: { exampleMode?: boolean }) {
 }
 
 export default function App() {
-  const exampleMode = new URLSearchParams(window.location.search).get("example") === "ecommerce";
+  const params = new URLSearchParams(window.location.search);
+  const exampleMode = params.get("example") === "ecommerce";
+  const benchMode = parseBenchLevel(params.get("bench"));
   return (
     <ReactFlowProvider>
-      <CanvasApp exampleMode={exampleMode} />
+      <CanvasApp exampleMode={exampleMode} benchMode={benchMode} />
     </ReactFlowProvider>
   );
 }

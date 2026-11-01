@@ -12,7 +12,7 @@
 - 构建：`npm run build`
 - 测试：`npm test`
 - 检查：`npm run lint`
-- 当前无 Git 仓库；改动前请先备份，不能依赖版本回滚
+- Git 仓库：已初始化（`master`），改动前后各提交一次即可回滚
 
 ## 2. 目录与模块
 
@@ -35,6 +35,7 @@ flowcraft/
 │     ├─ edges.tsx             自定义 FlowEdge：标签、回边平衡、手动通道、避障接入
 │     ├─ edgeRouting.ts        纯几何避障路由：AABB + 压缩网格 A* + 回边平衡
 │     ├─ edgeRoutingCache.ts   有界 LRU 边路由缓存（默认 512 条）
+│     ├─ benchGraph.ts         性能基线合成大图（?bench=small|medium|large）+ 页内 FPS/DOM 指标
 │     ├─ noteLayout.ts         备注锚定、旧存档迁移、布局重算与级联删除
 │     ├─ annotations.ts        批注数据模型、校验、增删改、解析与统计
 │     ├─ templateMarket.ts     模板校验、分类、搜索、去重合并、Bundle 导入导出
@@ -45,8 +46,8 @@ flowcraft/
 │     ├─ exportGeometry.ts     节点尺寸解析与导出包围盒
 │     ├─ exportLayout.ts       视口适配、PDF 排版、文件名
 │     └─ history.ts            增量撤销/重做快照
-├─ tests/                      8 个 Node 测试文件（几何、缓存、导出、批注、模板、备注布局）
-├─ docs/                       README 截图与示例原型
+├─ tests/                      9 个 Node 测试文件（几何、缓存、导出、批注、模板、备注布局、基准图）
+├─ docs/                       README 截图、示例原型与性能基线记录
 ├─ public/                     favicon 与图标资源
 └─ .ego-edge-routing-qa-20261101/  连线路由复测脚本（3 个）
 ```
@@ -151,6 +152,7 @@ graph TD
 | 视口 / PDF 排版 / 文件名 | `src/flow/exportLayout.ts` / `computeFitViewport`、`computePdfPlacement`、`buildExportFilename` |
 | JSON 导入导出 | `src/flow/exportFile.ts` + `App.tsx` |
 | 单文件 HTML 原型 | `src/flow/exportHtml.ts` / `buildPrototypeHtml` |
+| 裁剪下导出/打印保护 | `src/App.tsx` / `withFullRender`（克隆 DOM 前临时全量渲染并等待 measured） |
 
 导出实现注意：外层 `.fc-export-stage` 负责离屏，内层 `.fc-export-clone` 必须保持相对定位。不要改回“克隆节点自身 fixed”，否则 Chromium 会生成空白 PNG。
 
@@ -159,6 +161,7 @@ graph TD
 | 能力 | 文件 / 符号 |
 | --- | --- |
 | 画布状态、拖放、连线、快捷键 | `src/App.tsx` / `CanvasApp` |
+| 可视区裁剪开关（默认开） | `src/App.tsx` / `cull`、`CULL_STORAGE_KEY`、`.fc-cull-toggle` |
 | 画布内走查 | `src/flow/ScreenView.tsx` / `EditorContext` |
 | 全屏预览 | `src/flow/Preview.tsx` / `Preview` |
 | 撤销 / 重做 | `src/flow/history.ts` |
@@ -173,6 +176,7 @@ graph TD
 | `flowcraft.flow.v1` | `{ nodes, edges, annotations }`；备注节点可带 `data.anchor = { nodeId, side, gap }` |
 | `flowcraft.templates.v1` | 自定义模板数组 |
 | `flowcraft.annotations.v1` | 批注数组（兼容旧结构） |
+| `flowcraft.cull.v1` | 可视区裁剪开关（`"1"` 开 / `"0"` 关；缺省为开） |
 
 流程 JSON 导出结构：
 
@@ -214,7 +218,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 122 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器、回边平衡
+npm test          # 128 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器、回边平衡、基准图
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -236,6 +240,8 @@ npm run dev -- --port 5177
 12. 在 1470px、1180px、900px、620px 检查页面无横向溢出，顶栏资源库与属性入口均可用。
 13. 选中界面 → 拖动元素进入自由布局 → 拖 8 方向把手；确认宽高变化、对齐参考线释放、层级调整可用。
 14. 选中连线 → 修改出发热点与线路走向；确认路径立即变化、撤销可恢复、导出的 JSON 保留 `data.routeMode`。
+15. 可视区裁剪：工具栏裁剪按钮切换后刷新仍保持；大图局部视角拖动节点应流畅无卡死。
+16. 裁剪开启时导出 PNG / 打印：内容必须包含视口外的全部节点（导出保护 `withFullRender`），导出后画布恢复裁剪渲染。
 
 ## 8. 功能状态
 
@@ -251,7 +257,7 @@ npm run dev -- --port 5177
 | P1 单文件 HTML 原型 / JSON | ✅ 完成 |
 | P2 批注 | ✅ 完成（节点/连线，本地持久化，随 JSON 导出） |
 | P2 模板市场 | ✅ 完成本地版（搜索、分类、保存、导入导出、去重） |
-| P2 性能优化 | 🟡 已完成有界路由缓存与导出动态拆包；未启用可视区裁剪 |
+| P2 性能优化 | ✅ 完成（有界路由缓存、导出动态拆包、可视区裁剪默认启用；基线见 `docs/perf-baseline-2026-11-01.md`） |
 | 远程模板市场 | ⛔ 未实现 |
 | 云端同步 | ⛔ 不做（当前无云盘） |
 | 多人实时编辑 | ⛔ 不做 |
@@ -262,21 +268,20 @@ npm run dev -- --port 5177
 
 已知约束：
 
-- 当前无 Git 仓库，改动需额外注意备份。
 - 本项目曾遇到 Vite 预打包缓存导致连线不显示；处理方式是删除 `node_modules/.vite` 后重启并硬刷新。
-- 路由候选网格随节点数量增长；已加有界 LRU 缓存，但超大图仍需性能基线。自动回边平衡是确定性几何启发式，不保证全图交叉数全局最优。
-- 未启用 `onlyRenderVisibleElements`，避免未验证的 React Flow 行为风险。
+- 路由候选网格随节点数量增长；已加有界 LRU 缓存 + 可视区裁剪（默认开）。自动回边平衡是确定性几何启发式，不保证全图交叉数全局最优。
+- 可视区裁剪开启时，视口外节点不在 DOM 中；任何依赖克隆实时 DOM 的功能（PNG/SVG/PDF 导出、打印）必须先走 `withFullRender`。全图 fitView 时裁剪没有 DOM 收益，medium 级图挂载会慢约 3s（见基线文档）。
 - 模板市场是本地模板库，不涉及远程服务器或账号体系。
 - 导出的单文件原型是静态快照，不带输入校验、条件求值或动效。
 - `.fc-screen` 使用 `overflow: hidden`，元素或把手越出手机屏幕容器时会被裁剪；后续可加拖拽/缩放边界约束。
 
 下一步建议（按性价比）：
 
-1. 为 100+ 节点建立性能基线，再决定是否启用可视区裁剪。
-2. 为元素拖拽 / 缩放增加屏幕容器边界约束，避免越界把手被裁剪。
-3. 增加模板预览缩略图与内置行业模板包。
-4. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
-5. 若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+1. 为元素拖拽 / 缩放增加屏幕容器边界约束，避免越界把手被裁剪。
+2. 增加模板预览缩略图与内置行业模板包。
+3. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
+4. 若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+5. （性能后续）`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描 store，可改为按 target+handle 预分组；边路由 LRU 512 在 200+ 节点图上会抖动。
 
 ---
 

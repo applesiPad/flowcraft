@@ -21,6 +21,7 @@ type IconName =
   | "redo"
   | "search"
   | "fit"
+  | "crop"
   | "layout"
   | "play"
   | "more"
@@ -162,6 +163,12 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <rect x="3.5" y="4" width="17" height="16" rx="2" />
       <path d="M9 4v16M9 10h11.5" />
+    </>
+  ),
+  crop: (
+    <>
+      <path d="M6.5 2.5v15h15" />
+      <path d="M2.5 6.5h15v15" />
     </>
   ),
   play: <path d="M8 4.5 19 12 8 19.5z" />,
