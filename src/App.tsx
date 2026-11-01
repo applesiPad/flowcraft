@@ -36,6 +36,7 @@ import { moveElementZ, type ZOrderAction } from "./flow/elementEditor";
 import type { EdgeRouteMode } from "./flow/edgeRouting";
 import { EditorContext } from "./flow/ScreenView";
 import { initialEdges, initialNodes, screenTemplates } from "./flow/sample";
+import { buildPackGraph, packBounds, screenPacks, type ScreenPack } from "./flow/templatePacks";
 import { buildPrototypeHtml, resolveScreenTarget } from "./flow/exportHtml";
 import { exportTextFile } from "./flow/exportFile";
 import {
@@ -365,7 +366,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     return map;
   }, [customTemplates]);
 
-  const createNode = useCallback((payload: PaletteDragPayload, position: { x: number; y: number }): Node => {
+  const createNode = useCallback((payload: Exclude<PaletteDragPayload, { kind: "pack" }>, position: { x: number; y: number }): Node => {
     if (payload.kind === "screen") {
       const tpl = allScreenTemplates[payload.template];
       if (!tpl) throw new Error("模板不存在，可能已被删除");
@@ -402,8 +403,41 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     setCustomTemplates((ts) => ts.filter((tpl) => (tpl.id ?? "") !== id));
   }, []);
 
+  /** 插入整套行业模板包：一次 snapshot + 一次批量提交 => 一条可撤销记录。 */
+  const insertPack = useCallback(
+    (pack: ScreenPack, anchor: { x: number; y: number }) => {
+      const bounds = packBounds(pack);
+      const graph = buildPackGraph(pack, { x: anchor.x - bounds.minX, y: anchor.y - bounds.minY }, uid);
+      if (!graph.nodes.length) return;
+      snapshot();
+      setNodes((ns) => ns.concat(graph.nodes));
+      setEdges((es) => es.concat(graph.edges));
+      const primary = graph.nodes.find((n) => n.type === "screen") ?? graph.nodes[0];
+      setSelNode(primary.id);
+      setSelEdge(null);
+      setInspectorOpen(true);
+      // 包比单个节点宽得多：让新节点进入视野而不是留在原地看不见
+      window.setTimeout(() => fitView({ padding: 0.18, minZoom: 0.1, maxZoom: 0.9, duration: 420, nodes: graph.nodes }), 40);
+      showToast(`已插入模板包「${pack.name}」：${graph.nodes.length} 个节点 / ${graph.edges.length} 条连线`);
+    },
+    [fitView, setEdges, setNodes, showToast, snapshot],
+  );
+
   const addAtCenter = useCallback(
     (payload: PaletteDragPayload) => {
+      if (payload.kind === "pack") {
+        const pack = screenPacks.find((p) => p.id === payload.pack);
+        if (!pack) {
+          showToast("模板包不存在，可能已下线");
+          return;
+        }
+        const viewport = getViewport();
+        insertPack(pack, {
+          x: (-viewport.x + window.innerWidth * 0.42) / viewport.zoom,
+          y: (-viewport.y + window.innerHeight * 0.36) / viewport.zoom,
+        });
+        return;
+      }
       snapshot();
       const viewport = getViewport();
       const position = {
@@ -416,7 +450,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
       setSelEdge(null);
       setInspectorOpen(true);
     },
-    [createNode, getViewport, setNodes, snapshot],
+    [createNode, getViewport, insertPack, setNodes, showToast, snapshot],
   );
 
   const onDrop = useCallback(
@@ -424,15 +458,24 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
       const raw = event.dataTransfer.getData("application/flowcraft");
       if (!raw) return;
       event.preventDefault();
-      snapshot();
       const payload = JSON.parse(raw) as PaletteDragPayload;
+      if (payload.kind === "pack") {
+        const pack = screenPacks.find((p) => p.id === payload.pack);
+        if (!pack) {
+          showToast("模板包不存在，可能已下线");
+          return;
+        }
+        insertPack(pack, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+        return;
+      }
+      snapshot();
       const node = createNode(payload, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
       setNodes((ns) => ns.concat(node));
       setSelNode(node.id);
       setSelEdge(null);
       setInspectorOpen(true);
     },
-    [createNode, screenToFlowPosition, setNodes, snapshot],
+    [createNode, insertPack, screenToFlowPosition, setNodes, showToast, snapshot],
   );
 
   /* ---------- 连线 ---------- */

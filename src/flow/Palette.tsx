@@ -3,10 +3,13 @@ import type { DragEvent, KeyboardEvent } from "react";
 import { Icon } from "./Icon";
 import { filterTemplates, getTemplateCategories, templateCategory, type TemplateCategory } from "./templateMarket";
 import { screenTemplates } from "./sample";
+import { packMetrics, screenPacks, type ScreenPack } from "./templatePacks";
+import { packThumbnailSvg, screenThumbnailSvg } from "./templateThumbnails";
 import type { ScreenTemplate } from "./types";
 
 export type PaletteDragPayload =
   | { kind: "screen"; template: string }
+  | { kind: "pack"; pack: string }
   | { kind: "decision" }
   | { kind: "action" }
   | { kind: "note" };
@@ -254,6 +257,52 @@ const PALETTE_STYLES = `
   border: 1px solid color-mix(in oklab, var(--fc-accent) 18%, var(--fc-border));
   border-radius: 8px;
   font-size: 0;
+}
+.fc-palette-refined .fc-palette-template-thumb {
+  display: block;
+  width: 100%;
+  line-height: 0;
+  border: 1px solid var(--fc-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--fc-surface-subtle) 60%, #f4f6fa);
+}
+.fc-palette-refined .fc-palette-template-thumb > svg,
+.fc-palette-refined .fc-palette-pack-thumb > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.fc-palette-refined .fc-palette-pack-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.fc-palette-refined .fc-palette-pack-card {
+  min-height: 0;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--fc-surface-card);
+  text-align: left;
+}
+.fc-palette-refined .fc-palette-pack-card:hover {
+  border-color: color-mix(in oklab, var(--fc-accent) 55%, var(--fc-border));
+  background: color-mix(in oklab, var(--fc-accent) 8%, var(--fc-surface-hover));
+}
+.fc-palette-refined .fc-palette-pack-thumb {
+  display: block;
+  width: 100%;
+  line-height: 0;
+  border: 1px solid var(--fc-border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--fc-surface-subtle) 60%, #f4f6fa);
+}
+.fc-palette-refined .fc-palette-pack-card .fc-palette-category {
+  white-space: normal;
+  line-height: 1.45;
 }
 .fc-palette-refined .fc-palette-template-copy {
   display: flex;
@@ -528,6 +577,7 @@ export function Palette({
     const { template } = entry;
     const templateKey = entry.customIndex === null ? entry.key : template.id ?? `custom-${entry.customIndex}`;
     const categoryName = templateCategory(template);
+    const isBuiltIn = entry.customIndex === null;
     return (
       <button
         key={entry.key}
@@ -539,12 +589,56 @@ export function Palette({
         title={`拖到画布或点击添加：${template.name}，${categoryName}`}
         aria-label={`添加模板：${template.name}，${categoryName}`}
       >
-        <span className="fc-palette-icon fc-palette-template-icon" aria-hidden="true">
-          <Icon name={templateIconName(entry)} size={17} />
-        </span>
+        {isBuiltIn ? (
+          <span
+            className="fc-palette-template-thumb"
+            aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: screenThumbnailSvg(template) }}
+          />
+        ) : (
+          <span className="fc-palette-icon fc-palette-template-icon" aria-hidden="true">
+            <Icon name={templateIconName(entry)} size={17} />
+          </span>
+        )}
         <span className="fc-palette-template-copy">
           <strong>{template.name}</strong>
           <span className="fc-palette-category">{categoryName}</span>
+        </span>
+      </button>
+    );
+  };
+
+  const visiblePacks = useMemo(() => {
+    const q = deferredQuery.trim().toLowerCase();
+    if (!q) return screenPacks;
+    return screenPacks.filter((pack) =>
+      [pack.name, pack.description, ...pack.tags].join(" ").toLowerCase().includes(q),
+    );
+  }, [deferredQuery]);
+
+  const renderPackCard = (pack: ScreenPack) => {
+    const metrics = packMetrics(pack);
+    return (
+      <button
+        key={pack.id}
+        type="button"
+        className="fc-palette-item fc-palette-pack-card"
+        draggable
+        onDragStart={(event) => startDrag(event, { kind: "pack", pack: pack.id })}
+        onClick={() => onAdd({ kind: "pack", pack: pack.id })}
+        title={`拖到画布或点击插入整套链路：${pack.name}（${metrics.screens} 界面 / ${metrics.decisions + metrics.actions} 逻辑 / ${metrics.edgeCount} 连线）`}
+        aria-label={`插入模板包：${pack.name}`}
+      >
+        <span
+          className="fc-palette-pack-thumb"
+          aria-hidden="true"
+          dangerouslySetInnerHTML={{ __html: packThumbnailSvg(pack) }}
+        />
+        <span className="fc-palette-template-copy">
+          <strong>{pack.name}</strong>
+          <span className="fc-palette-category">
+            {pack.tags.join(" · ")}｜{metrics.screens} 界面 · {metrics.edgeCount} 连线
+          </span>
         </span>
       </button>
     );
@@ -694,6 +788,18 @@ export function Palette({
               </button>
             ) : null}
           </div>
+
+          {category === CATEGORY_ALL && visiblePacks.length ? (
+            <section className="fc-palette-section" aria-label="行业模板包">
+              <div className="fc-palette-section-heading">
+                <div className="fc-panel-title fc-palette-section-title">行业模板包</div>
+                <span className="fc-palette-section-count">{visiblePacks.length}</span>
+              </div>
+              <div className="fc-palette-pack-grid">
+                {visiblePacks.map(renderPackCard)}
+              </div>
+            </section>
+          ) : null}
 
           {builtInEntries.length ? (
             <section className="fc-palette-section" aria-label="内置模板">

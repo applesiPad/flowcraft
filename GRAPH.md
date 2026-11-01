@@ -1,7 +1,7 @@
 # FlowCraft 项目导航图
 
 > 面向开发和维护的“找东西”索引。产品说明看 [README.md](./README.md)。
-> 最后更新：2026-11-01
+> 最后更新：2026-11-02
 
 ## 1. 项目速览
 
@@ -40,6 +40,8 @@ flowcraft/
 │     ├─ noteLayout.ts         备注锚定、旧存档迁移、布局重算与级联删除
 │     ├─ annotations.ts        批注数据模型、校验、增删改、解析与统计
 │     ├─ templateMarket.ts     模板校验、分类、搜索、去重合并、Bundle 导入导出
+│     ├─ templatePacks.ts      内置行业模板包：包定义、校验、实例化为节点/边
+│     ├─ templateThumbnails.ts 模板/模板包 SVG 缩略图（纯函数，无 DOM 依赖）
 │     ├─ exportFile.ts         JSON / HTML 文本下载
 │     ├─ exportHtml.ts         单文件 HTML 原型导出
 │     ├─ exportCanvas.ts       PNG / SVG / PDF 画布导出
@@ -47,7 +49,7 @@ flowcraft/
 │     ├─ exportGeometry.ts     节点尺寸解析与导出包围盒
 │     ├─ exportLayout.ts       视口适配、PDF 排版、文件名
 │     └─ history.ts            增量撤销/重做快照
-├─ tests/                      9 个 Node 测试文件（几何、缓存、导出、批注、模板、备注布局、基准图）
+├─ tests/                      16 个 Node 测试文件（几何、缓存、导出、批注、模板、模板包、备注布局、基准图等）
 ├─ docs/                       README 截图、示例原型与性能基线记录
 ├─ public/                     favicon 与图标资源
 └─ .ego-edge-routing-qa-20261101/  连线路由复测脚本（3 个）
@@ -146,6 +148,17 @@ graph TD
 | 面板交互 | `src/flow/Palette.tsx` / 搜索、分类、导入、导出、空态 |
 | 本地持久化 | `App.tsx` / `TEMPLATE_STORAGE_KEY` |
 
+### 模板缩略图与行业模板包（2026-11-02 完成）
+
+| 能力 | 文件 / 符号 |
+| --- | --- |
+| SVG 缩略图（纯函数） | `src/flow/templateThumbnails.ts` / `templateThumbSvg`（内置模板迷你界面投影） |
+| 行业模板包定义 | `src/flow/templatePacks.ts` / `screenPacks`（电商下单 / 外卖点单 / 员工入职） |
+| 包静态校验 | `src/flow/templatePacks.ts` / `validateScreenPack`、`packMetrics` |
+| 包实例化 | `src/flow/templatePacks.ts` / `buildPackGraph`（一次快照整体插入、可撤销） |
+| 调色板展示 | `src/flow/Palette.tsx` / 包卡片、缩略图、点击居中插入、拖入画布 |
+| 插入接线 | `src/App.tsx` / `insertPack`、`addAtCenter`、`onDrop` |
+
 ### 导出
 
 | 能力 | 文件 / 符号 |
@@ -223,7 +236,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 149 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
+npm test          # 162 个测试：几何、缓存、导出、批注、模板、模板包、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -283,15 +296,18 @@ npm run dev -- --port 5177
 
 下一步建议（按性价比）：
 
-1. 增加模板预览缩略图与内置行业模板包。
-2. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
-3. 若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+1. 导出原型加条件分支求值、输入校验与页面切换动效。
+2. 流程健康检查：死路界面 / 孤立界面 / 未接线主按钮一键扫描。
+3. 多画布与版本对比；若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+4. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
 
 已完成（2026-11-01）：`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描改为 `edgeStoreSelectors.ts` 共享派生（WeakMap 按 store 对象记忆，一次更新全图只派生一次；200 节点/240 边确定性微基准 2.68→0.06 ms/帧，Ego A/B 电商示例 14 边 path d 校验和与标签 lane 逐字节一致）；边路由 LRU 扩容至 2048，并对几何数组实例做了序列缓存。
 
+已完成（2026-11-02）：模板预览缩略图（`templateThumbnails.ts` 自包含 SVG，纯函数无 DOM 依赖）+ 内置行业模板包（`templatePacks.ts` 3 个业务链路包，点击/拖入整体插入、一次撤销回退）。Ego round6 回归 PASS：电商示例 14 边锚点逐字节一致、调色板 6 缩略图 + 3 包卡片、搜索过滤、点击插入 12/14→21/24 与拖入 HR 包均一次撤销恢复。
+
 ---
 
-最后更新：2026-11-01
+最后更新：2026-11-02
 
 
 
