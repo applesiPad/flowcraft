@@ -141,8 +141,8 @@ function simplifyPath(points: Point[]): Point[] {
 export function detectCollisions(
   from: Point,
   to: Point,
-  nodeGeometries: NodeGeometry[],
-  excludeNodeIds: string[] = [],
+  nodeGeometries: readonly NodeGeometry[],
+  excludeNodeIds: readonly string[] = [],
   margin = DEFAULT_MARGIN,
 ): NodeGeometry[] {
   const excluded = new Set(excludeNodeIds);
@@ -351,7 +351,7 @@ export function normalizeEdgeRouteMode(value: unknown): EdgeRouteMode {
   return value === "top" || value === "bottom" ? value : "auto";
 }
 
-function nearestNodeByEdge(point: Point, nodes: NodeGeometry[], pickEdge: (geom: NodeGeometry) => number): NodeGeometry {
+function nearestNodeByEdge(point: Point, nodes: readonly NodeGeometry[], pickEdge: (geom: NodeGeometry) => number): NodeGeometry {
   let best = nodes[0];
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const node of nodes) {
@@ -372,7 +372,7 @@ export function createBackEdgeLanePath(
   from: Point,
   to: Point,
   side: Extract<EdgeRouteMode, "top" | "bottom">,
-  nodeGeometries: NodeGeometry[],
+  nodeGeometries: readonly NodeGeometry[],
   laneIndex = 0,
   margin = DEFAULT_MARGIN,
 ): Point[] {
@@ -424,7 +424,7 @@ export function createBackEdgeLanePath(
 export function createBalancedBackEdgePath(
   from: Point,
   to: Point,
-  nodeGeometries: NodeGeometry[],
+  nodeGeometries: readonly NodeGeometry[],
   laneIndex = 0,
   margin = DEFAULT_MARGIN,
 ): Point[] | null {
@@ -465,7 +465,7 @@ export function createBalancedBackEdgePath(
 export function routeAroundNodes(
   from: Point,
   to: Point,
-  collisionNodes: NodeGeometry[],
+  collisionNodes: readonly NodeGeometry[],
   margin = DEFAULT_MARGIN,
 ): Point[] {
   if (collisionNodes.length === 0) return [from, to];
@@ -480,8 +480,8 @@ export function routeAroundNodes(
 export function smartEdgeRoute(
   from: Point,
   to: Point,
-  nodeGeometries: NodeGeometry[],
-  excludeNodeIds: string[],
+  nodeGeometries: readonly NodeGeometry[],
+  excludeNodeIds: readonly string[],
   margin = DEFAULT_MARGIN,
 ): Point[] {
   const collisions = detectCollisions(from, to, nodeGeometries, excludeNodeIds, margin);

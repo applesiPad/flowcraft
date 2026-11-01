@@ -34,7 +34,8 @@ flowcraft/
 │     ├─ Preview.tsx           全屏原型预览播放器
 │     ├─ edges.tsx             自定义 FlowEdge：标签、回边平衡、手动通道、避障接入
 │     ├─ edgeRouting.ts        纯几何避障路由：AABB + 压缩网格 A* + 回边平衡
-│     ├─ edgeRoutingCache.ts   有界 LRU 边路由缓存（默认 512 条）
+│     ├─ edgeRoutingCache.ts   有界 LRU 边路由缓存（默认 2048 条）
+│     ├─ edgeStoreSelectors.ts 边共享派生状态：zoom / lane 分组 / 节点几何 / 可视区（WeakMap 记忆）
 │     ├─ benchGraph.ts         性能基线合成大图（?bench=small|medium|large）+ 页内 FPS/DOM 指标
 │     ├─ noteLayout.ts         备注锚定、旧存档迁移、布局重算与级联删除
 │     ├─ annotations.ts        批注数据模型、校验、增删改、解析与统计
@@ -60,6 +61,8 @@ graph TD
     SAMPLE[sample.ts] -->|首次启动| APP
     APP -->|节点数据| NODES[nodes.tsx]
     APP -->|连线数据| EDGES[edges.tsx]
+    STORE[(React Flow store)] -->|WeakMap 一次派生| DERIVED[edgeStoreSelectors.ts]
+    DERIVED -->|zoom / lane 分组 / 节点几何 / 可视区| EDGES
     NODES -->|热点 Handle| CANVAS[React Flow 画布]
     EDGES -->|路由输入| CACHE[edgeRoutingCache.ts]
     CACHE -->|未命中| ROUTE[edgeRouting.ts]
@@ -107,12 +110,13 @@ graph TD
 | 手动回边通道 | `src/flow/edgeRouting.ts` | `createBackEdgeLanePath`、`normalizeEdgeRouteMode` |
 | 连线二次编辑 | `src/flow/Inspector.tsx` / `App.tsx` | 出发热点、`routeMode`、`patchEdge` |
 | 路由缓存 | `src/flow/edgeRoutingCache.ts` | `createEdgeRouteCache`、`routeWithCache`、`defaultEdgeRouteCache` |
-| 回归测试 | `tests/edgeRouting.test.ts`、`tests/edgeRoutingCache.test.ts` | 单障碍、多障碍、缓存失效、LRU 淘汰 |
+| 边共享派生状态 | `src/flow/edgeStoreSelectors.ts` | `deriveEdgeFlowState`、`selectDerivedEdgeFlowState`、`laneGroupForEdge`、`laneIndexOfEdge` |
+| 回归测试 | `tests/edgeRouting.test.ts`、`tests/edgeRoutingCache.test.ts`、`tests/edgeStoreSelectors.test.ts` | 单障碍、多障碍、缓存失效、LRU 淘汰、lane 分组与逐边旧语义等价、派生缓存命中 |
 
 实现要点：
 
-1. `edges.tsx` 从 React Flow store 取出所有节点的绝对位置、宽高。
-2. 排除连线的 source/target 节点，其余节点按 22px 安全边距生成 AABB。
+1. `edges.tsx` 通过 `selectDerivedEdgeFlowState` 取共享派生状态：zustand 每次更新产生新 state 对象，`deriveEdgeFlowState` 结果按该对象存 WeakMap，同一帧内所有边共用一次派生（节点几何 O(N)、lane 分组 O(E log E)、可视区、对端标签尺寸数组）；每边只做 Map/O(1) 查询，取代旧版每边 5 个 store selector 的 O(E×N) 扫描。
+2. 排除连线的 source/target 节点，其余节点按 22px 安全边距生成 AABB（`derived.avoidRects(excludeNodeId)` 按目标节点记忆化）。
 3. 直线无碰撞时继续使用 `getSmoothStepPath`，保持原有观感。
 4. 直线有碰撞时，以起点、终点及所有障碍边界组成压缩网格，用带转向惩罚的 A* 找正交路径。
 5. 多障碍仍无解时，使用所有障碍并集外框的保守绕行兜底。
@@ -208,6 +212,7 @@ graph TD
 - 改连线外观或标签：`src/flow/edges.tsx`
 - 改避障行为：`src/flow/edgeRouting.ts`
 - 改路由缓存：`src/flow/edgeRoutingCache.ts`
+- 改边共享派生状态（zoom/lane/几何/可视区）：`src/flow/edgeStoreSelectors.ts` + `src/flow/edges.tsx`
 - 加工具栏按钮：`src/App.tsx` 的 toolbar/JSX 区域
 - 改右键/属性面板：`src/flow/Inspector.tsx`
 - 改批注：`src/flow/annotations.ts` + `src/flow/Inspector.tsx`
@@ -218,7 +223,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 140 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图
+npm test          # 149 个测试：几何、缓存、导出、批注、模板、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -278,10 +283,11 @@ npm run dev -- --port 5177
 
 下一步建议（按性价比）：
 
-1. `FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描 store，可改为按 target+handle 预分组；边路由 LRU 512 在 200+ 节点图上会抖动。
-2. 增加模板预览缩略图与内置行业模板包。
-3. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
-4. 若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+1. 增加模板预览缩略图与内置行业模板包。
+2. 在 JSON 导入时增加显式 schema 版本迁移与错误详情。
+3. 若要协作，再单独设计后端、权限和冲突合并，不在当前阶段假装实现。
+
+已完成（2026-11-01）：`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描改为 `edgeStoreSelectors.ts` 共享派生（WeakMap 按 store 对象记忆，一次更新全图只派生一次；200 节点/240 边确定性微基准 2.68→0.06 ms/帧，Ego A/B 电商示例 14 边 path d 校验和与标签 lane 逐字节一致）；边路由 LRU 扩容至 2048，并对几何数组实例做了序列缓存。
 
 ---
 

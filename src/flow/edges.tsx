@@ -1,8 +1,12 @@
 import { memo } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useStore, type EdgeProps } from "@xyflow/react";
-import type { NodeGeometry } from './edgeRouting';
 import { createBackEdgeLanePath, createBalancedBackEdgePath, normalizeEdgeRouteMode } from './edgeRouting';
 import { routeWithCache } from './edgeRoutingCache';
+import {
+  laneGroupForEdge,
+  laneIndexOfEdge,
+  selectDerivedEdgeFlowState,
+} from './edgeStoreSelectors';
 import {
   edgeArrowPolygon,
   chooseEdgeLabelAnchor,
@@ -10,10 +14,7 @@ import {
   estimateEdgeLabelSize,
   edgeLabelCardStyle,
   placeEdgeLabelGroup,
-  edgeLaneIndex,
   type EdgeLabelPoint,
-  type EdgeLabelRect,
-  type EdgeLabelSize,
 } from './edgeLabel';
 
 type Pt = { x: number; y: number };
@@ -110,68 +111,21 @@ function placeLabelClearOfTarget(
 
 export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, data } = props;
-  const zoom = useStore((st) => st.transform[2]);
+  // 与“单条边”无关的量（zoom / 全部节点几何 / lane 分组 / 可视区）改为共享派生缓存：
+  // 同一帧内所有边命中同一份 DerivedEdgeFlowState，大图每帧只算一次而不是 E 次。
+  const derived = useStore(selectDerivedEdgeFlowState);
+  const zoom = derived.zoom;
   // fit view 在窄窗口下可能只有约 0.24；标签已反向缩放，不应直接消失。
   const showLabel = zoom >= 0.18;
   // 回边路由需要节点真实高度，否则会横穿卡片
   const srcNode = useStore((st) => (props.source ? st.nodeLookup.get(props.source) : undefined));
   const tgtNode = useStore((st) => (props.target ? st.nodeLookup.get(props.target) : undefined));
   // 同一目标/入口的边按 id 稳定排序，保证标签错位可预测且不会重叠
-  const laneIndex = useStore((st) => {
-    const refs = [...st.edges].map((edge) => ({
-      id: edge.id,
-      target: edge.target,
-      targetHandle: edge.targetHandle ?? null,
-    }));
-    return edgeLaneIndex(refs, id, props.target, props.targetHandleId ?? null);
-  });
-  // 同一目标入口的所有边必须共用一组尺寸和 lane 信息，否则每条边会各自判断边界，
-  // 出现“前两条在左、第三条跳到上方”的断裂布局。
-  const peerInfo = useStore((st) => {
-    if (!props.target) return { count: 0, orderedIds: [] as string[], sizes: [] as EdgeLabelSize[] };
-    const peers = [...st.edges]
-      .filter((edge) => edge.target === props.target && (edge.targetHandle ?? null) === (props.targetHandleId ?? null))
-      .map((edge) => ({
-        id: edge.id,
-        label: String((edge.data as { label?: unknown } | undefined)?.label ?? ""),
-      }))
-      .sort((a, b) => a.id.localeCompare(b.id));
-    const targetNode = st.nodeLookup.get(props.target);
-    const title = (targetNode?.data as { title?: unknown } | undefined)?.title;
-    const targetName = typeof title === "string" && title.trim() ? title.trim() : "";
-    const direction = "→";
-    return {
-      count: peers.length,
-      orderedIds: peers.map((peer) => peer.id),
-      sizes: peers.map((peer) => estimateEdgeLabelSize(
-        peer.label,
-        targetName ? `${direction} ${targetName}` : direction,
-        st.transform[2],
-      )),
-    };
-  });
-  const viewport = useStore((st) => {
-    const [tx, ty, scale] = st.transform;
-    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-    return {
-      left: -tx / safeScale + 12 / safeScale,
-      top: -ty / safeScale + 12 / safeScale,
-      right: (st.width - tx) / safeScale - 12 / safeScale,
-      bottom: (st.height - ty) / safeScale - 12 / safeScale,
-    } satisfies EdgeLabelRect;
-  });
+  const laneGroup = laneGroupForEdge(derived, props.target, props.targetHandleId);
+  const laneIndex = laneIndexOfEdge(laneGroup, id);
+  const viewport = derived.viewport;
   // 获取所有节点的几何信息用于智能避障
-  const allNodeGeometries = useStore((st) => {
-    const geoms: NodeGeometry[] = [];
-    st.nodeLookup.forEach((node) => {
-      const x = node.internals?.positionAbsolute?.x ?? node.position.x;
-      const y = node.internals?.positionAbsolute?.y ?? node.position.y;
-      const width = node.measured?.width ?? 280;
-      const height = node.measured?.height ?? 160;
-      geoms.push({ id: node.id, x, y, width, height });
-    });
-    return geoms;
-  });
+  const allNodeGeometries = derived.nodeGeometries;
 
   const routeMode = normalizeEdgeRouteMode((data as { routeMode?: unknown } | undefined)?.routeMode);
   const isBackEdge = sourcePosition === "right" && targetPosition === "left" && targetX <= sourceX - 8;
@@ -272,8 +226,10 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const targetTitle = (tgtNode?.data as { title?: unknown } | undefined)?.title;
   const targetName = typeof targetTitle === "string" && targetTitle.trim() ? targetTitle.trim() : "";
   const destination = targetName ? `${direction} ${targetName}` : direction;
-  const peerCount = peerInfo.count;
-  const size = peerInfo.sizes[laneIndex] ?? estimateEdgeLabelSize(label, destination, zoom);
+  // 同一目标入口的所有边共用一组尺寸和 lane 信息，否则每条边会各自判断边界，
+  // 出现“前两条在左、第三条跳到上方”的断裂布局。
+  const peerCount = laneGroup.ids.length;
+  const size = laneGroup.sizes[laneIndex] ?? estimateEdgeLabelSize(label, destination, zoom);
   const targetAbsolute = tgtNode?.internals?.positionAbsolute;
   const targetMeasured = tgtNode?.measured;
   const targetRect = targetAbsolute
@@ -284,14 +240,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
         bottom: targetAbsolute.y + (targetMeasured?.height ?? 180),
       }
     : undefined;
-  const avoidRects: EdgeLabelRect[] = allNodeGeometries
-    .filter((node) => node.id !== props.target)
-    .map((node) => ({
-      left: node.x,
-      top: node.y,
-      right: node.x + node.width,
-      bottom: node.y + node.height,
-    }));
+  const avoidRects = derived.avoidRects(props.target);
   const placement = placeEdgeLabelGroup(
     { x: labelX, y: labelY },
     { x: targetX, y: targetY },
@@ -301,7 +250,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
     zoom,
     {
       size,
-      peerSizes: peerInfo.sizes,
+      peerSizes: laneGroup.sizes,
       targetRect,
       outwardGap: 18 / zoom,
       viewport,

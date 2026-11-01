@@ -1,15 +1,16 @@
 import { smartEdgeRoute, type NodeGeometry, type Point } from "./edgeRouting.ts";
 
 /** 默认缓存上限，避免大画布持续累积路由结果。 */
-export const DEFAULT_EDGE_ROUTE_CACHE_SIZE = 512;
+export const DEFAULT_EDGE_ROUTE_CACHE_SIZE = 2048;
 
 export type EdgeRouteInput = {
   from: Point;
   to: Point;
   sourceId: string;
   targetId: string;
-  nodeGeometries: NodeGeometry[];
-  excludeNodeIds: string[];
+  /** 共享的只读节点几何：大图中所有边复用同一数组实例，键计算按实例记忆。 */
+  nodeGeometries: readonly NodeGeometry[];
+  excludeNodeIds: readonly string[];
   margin?: number;
 };
 
@@ -49,27 +50,43 @@ function compareNodeGeometries(a: NodeGeometry, b: NodeGeometry): number {
 }
 
 /**
+ * 节点几何片段的排序+编码结果按数组实例记忆。
+ * 大图里所有边共用同一份几何数组，因此 O(N log N) 的准备工作每次 store 更新只做一次，
+ * 而不是每条边每帧各做一次；数组是只读的，实例不变即内容不变。
+ */
+const geometryStampCache = new WeakMap<readonly NodeGeometry[], string>();
+
+function geometryStamp(nodeGeometries: readonly NodeGeometry[]): string {
+  const cached = geometryStampCache.get(nodeGeometries);
+  if (cached !== undefined) return cached;
+  const stamp = JSON.stringify(
+    [...nodeGeometries]
+      .sort(compareNodeGeometries)
+      .map(({ id, x, y, width, height }) => [id, x, y, width, height]),
+  );
+  geometryStampCache.set(nodeGeometries, stamp);
+  return stamp;
+}
+
+/**
  * 生成稳定路由键。节点数组和排除 id 的顺序不影响语义，因此先规范化排序；
  * JSON 编码避免 id 中出现分隔符时产生键碰撞。
  */
 export function createEdgeRouteCacheKey(input: EdgeRouteInput): string {
-  const nodeGeometries = [...input.nodeGeometries]
-    .sort(compareNodeGeometries)
-    .map(({ id, x, y, width, height }) => [id, x, y, width, height]);
   const excludeNodeIds = [...new Set(input.excludeNodeIds)].sort(compareStrings);
 
-  return JSON.stringify([
-    "edge-route-v1",
+  return [
+    '"edge-route-v1"',
     input.from.x,
     input.from.y,
     input.to.x,
     input.to.y,
-    input.sourceId,
-    input.targetId,
+    JSON.stringify(input.sourceId),
+    JSON.stringify(input.targetId),
     input.margin,
-    excludeNodeIds,
-    nodeGeometries,
-  ]);
+    JSON.stringify(excludeNodeIds),
+    geometryStamp(input.nodeGeometries),
+  ].join(",");
 }
 
 function clonePath(path: Point[]): Point[] {

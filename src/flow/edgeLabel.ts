@@ -189,16 +189,16 @@ export type EdgeLabelPlacement = {
 export type PlaceEdgeLabelOptions = {
   size?: EdgeLabelSize;
   targetRect?: EdgeLabelRect;
-  /** 同一目标的所有标签尺寸；整组一起选边，避免只有部分 lane 跳边。 */
-  peerSizes?: EdgeLabelSize[];
+  /** 同一目标的所有标签尺寸；整组一起选边，避免只有部分 lane 跳边。允许共享只读数组。 */
+  peerSizes?: readonly EdgeLabelSize[];
   /** 同组整体向外退让的屏幕距离，用于避开覆盖目标的路径。 */
   outwardGap?: number;
   /** 画布内可见区域（流程图坐标）；标签列超出时优先换到另一侧。 */
   viewport?: EdgeLabelRect;
   /** 用于判断标签朝向的候选侧，按优先级排列。 */
   preferredSides?: EdgeLabelSide[];
-  /** 其他节点的真实矩形；候选侧的整组标签不得压在它们上面。 */
-  avoidRects?: EdgeLabelRect[];
+  /** 其他节点的真实矩形；候选侧的整组标签不得压在它们上面。允许共享只读数组。 */
+  avoidRects?: readonly EdgeLabelRect[];
 };
 
 const DEFAULT_LABEL_SIZE: EdgeLabelSize = { width: 160, height: 28 };

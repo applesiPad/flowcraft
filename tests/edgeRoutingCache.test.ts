@@ -37,7 +37,7 @@ test("首次路由是 miss", () => {
 
   assert.deepEqual(path, [FROM, TO]);
   assert.equal(cache.size, 1);
-  assert.equal(cache.maxSize, 512);
+  assert.equal(cache.maxSize, 2048);
   assert.deepEqual(cache.stats(), {
     hits: 0,
     misses: 1,
