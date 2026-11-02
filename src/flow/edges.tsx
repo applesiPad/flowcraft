@@ -257,6 +257,28 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const mainArrowSize = 9 / screenZoom;
   const mainArrowPoints = edgeArrowPolygon({ x: targetX, y: targetY }, targetPosition ?? "left", mainArrowSize);
   const anchorStyle = edgeLabelAnchorStyle({ x: placement.x, y: placement.y });  const cardStyle = edgeLabelCardStyle(zoom, placement.side);
+
+  // ComfyUI 风格：根据 sourceHandle 给连线着色
+  // 不同热点出发的连线用不同颜色，一眼区分流向
+  const handleColors: Record<string, string> = {
+    submit: "#6366F1",   // 主操作 - 靛蓝
+    pay: "#10B981",      // 支付 - 绿色
+    back: "#F59E0B",     // 返回 - 琥珀
+    cancel: "#EF4444",   // 取消 - 红色
+    row1: "#8B5CF6",     // 列表项1 - 紫
+    row2: "#06B6D4",     // 列表项2 - 青
+    row3: "#EC4899",     // 列表项3 - 粉
+    member: "#14B8A6",   // 成员 - 青绿
+    publish: "#F97316",  // 发布 - 橙
+    search: "#64748B",   // 搜索 - 灰蓝
+    banner: "#A855F7",   // 横幅 - 紫
+    logout: "#EF4444",   // 退出 - 红
+    yes: "#10B981",      // 判断是 - 绿
+    no: "#EF4444",       // 判断否 - 红
+    out: "#6B7280",      // 动作出口 - 灰
+  };
+  const handleColor = handleColors[props.sourceHandleId ?? ""] ?? null;
+  const strokeColor = handleColor && !selected ? handleColor : edgeColor;
   return (
     <>
       <BaseEdge
@@ -264,13 +286,13 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
         path={path}
         markerEnd={undefined}
         style={{
-          stroke: edgeColor,
+          stroke: strokeColor,
           strokeWidth: edgeStrokeWidth,
         }}
       />
       <polygon
         points={mainArrowPoints}
-        fill={edgeColor}
+        fill={strokeColor}
         stroke="var(--fc-edge-anchor-stroke, #fff)"
         strokeWidth={0.8 / screenZoom}
         pointerEvents="none"

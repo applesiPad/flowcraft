@@ -474,17 +474,29 @@ export function routeAroundNodes(
 }
 
 /**
- * ComfyUI 风格贝塞尔曲线：水平出口 + 自然弯曲。
- * 控制点偏移量根据距离动态调整，使曲线流畅自然。
+ * ComfyUI 风格贝塞尔曲线：控制点根据源/目标相对位置自适应。
+ * 参考 LiteGraph.js 的 linkPath 实现：控制点偏移量 = 20 + |dx| * 0.25，
+ * 水平方向从源右侧出发、目标左侧进入，垂直方向自然过渡。
  */
 export function bezierCurvePath(from: Point, to: Point): string {
-  const dx = Math.abs(to.x - from.x);
-  // 控制点偏移量：短距离用较小值，长距离按比例增大
-  const offset = Math.max(60, Math.min(dx * 0.4, 300));
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+
+  // ComfyUI/LiteGraph 经典公式：控制点偏移 = 20 + 距离 * 0.25
+  // 短距离紧凑，长距离舒展，但不会过度外扩
+  const offset = 20 + absDx * 0.25;
+
+  // 当目标在源的上方/下方较远时，控制点需要带一点垂直分量
+  // 这样曲线不会先水平走很远再折回来
+  const verticalBias = absDy > absDx * 0.5 ? absDy * 0.15 : 0;
+
   const cp1x = from.x + offset;
-  const cp1y = from.y;
+  const cp1y = from.y + (dy > 0 ? verticalBias : -verticalBias);
   const cp2x = to.x - offset;
-  const cp2y = to.y;
+  const cp2y = to.y - (dy > 0 ? verticalBias : -verticalBias);
+
   return `M${from.x},${from.y} C${cp1x},${cp1y} ${cp2x},${cp2y} ${to.x},${to.y}`;
 }
 
