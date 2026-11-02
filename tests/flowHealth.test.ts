@@ -97,3 +97,48 @@ test("健康检查：判断节点自环不算出口缺失", () => {
   const issues = scanFlowHealth(nodes, edges);
   assert.equal(issues.length, 0);
 });
+
+const decisionWithCondition = (id: string, condition: unknown): Node => ({
+  id,
+  type: "decision",
+  position: { x: 0, y: 0 },
+  data: { title: "VIP？", yes: "是", no: "否", condition },
+});
+
+test("健康检查二期：条件变量没有输入框来源 → condVarUnknown", () => {
+  const nodes = [
+    screenNode("a", "登录", [{ id: "phone", kind: "input", name: "phone", label: "手机号" }]),
+    decisionWithCondition("d", { variable: "vip", op: "==", value: "1" }),
+    screenNode("b", "界面", []),
+  ];
+  const issues = scanFlowHealth(nodes, []);
+  const mismatch = issues.filter((i) => i.kind === "condVarUnknown");
+  assert.equal(mismatch.length, 1);
+  assert.equal(mismatch[0].nodeId, "d");
+  assert.ok(mismatch[0].detail.includes("vip"));
+  // 变量名能对上 → 不报；条件变量带空格也能对上（normalizeCondition trim）
+  const ok = scanFlowHealth(
+    [
+      screenNode("a", "登录", [{ id: "phone", kind: "input", name: "vip", label: "卡号" }]),
+      decisionWithCondition("d", { variable: "vip", op: "notEmpty" }),
+      screenNode("b", "界面", []),
+    ],
+    [],
+  );
+  assert.ok(!ok.some((i) => i.kind === "condVarUnknown"));
+  // 没配置条件 / 条件不完整 → 不报（走默认「是」是既定语义）
+  const noCond = scanFlowHealth([decisionWithCondition("d", null), screenNode("b", "界面", [])], []);
+  assert.ok(!noCond.some((i) => i.kind === "condVarUnknown"));
+  const badCond = scanFlowHealth([decisionWithCondition("d", { variable: "  ", op: "==" }), screenNode("b", "界面", [])], []);
+  assert.ok(!badCond.some((i) => i.kind === "condVarUnknown"));
+});
+
+test("健康检查二期：空标题界面 → unnamedScreen", () => {
+  const nodes = [screenNode("a", "登录", []), screenNode("b", "   ", [])];
+  const issues = scanFlowHealth(nodes, []);
+  const unnamed = issues.filter((i) => i.kind === "unnamedScreen");
+  assert.equal(unnamed.length, 1);
+  assert.equal(unnamed[0].nodeId, "b");
+  // a 无入无出 → 孤立（命名正常不报）
+  assert.equal(issues.filter((i) => i.kind === "orphan").length, 2);
+});

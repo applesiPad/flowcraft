@@ -55,12 +55,17 @@ import {
   addSnapshot,
   autoSnapshotName,
   diffFlows,
+  groupSnapshotsByDay,
   readSnapshots,
   removeSnapshot,
+  renameSnapshot,
   type FlowDiff,
   type FlowSnapshot,
 } from "./flow/snapshotStore";
 import { HEALTH_KIND_LABEL, scanFlowHealth, type HealthIssue } from "./flow/flowHealth";
+import { parseFlowFile, summarizeImport, type ImportResult } from "./flow/schemaMigrate";
+import { buildReportHtml } from "./flow/exportReport";
+import { installQaProbe } from "./flow/qaProbe";
 import { exportTextFile } from "./flow/exportFile";
 import {
   applyFlowHistory,
@@ -184,7 +189,9 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [healthOpen, setHealthOpen] = useState(false);
   const [snapOpen, setSnapOpen] = useState(false);
   const [snapshots, setSnapshots] = useState<FlowSnapshot[]>([]);
+  const [renamingSnapId, setRenamingSnapId] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<{ name: string; diff: FlowDiff } | null>(null);
+  const [importReport, setImportReport] = useState<ImportResult | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const canvasMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -950,7 +957,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     const exported = exportTextFile({
       filename: `flowcraft-${Date.now()}.json`,
       type: "application/json",
-      content: JSON.stringify({ version: 2, nodes: canonicalNodes, edges, annotations }, null, 2),
+      content: JSON.stringify({ version: 3, nodes: canonicalNodes, edges, annotations }, null, 2),
     });
     showToast(
       exported
@@ -1062,25 +1069,25 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
 
   const importJson = useCallback(
     (file: File) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const parsed = JSON.parse(String(reader.result)) as { nodes: Node[]; edges: Edge[]; annotations?: unknown };
-          if (!Array.isArray(parsed.nodes)) throw new Error("bad file");
-          snapshot();
-          setNodes(migrateLegacyNoteAnchors(parsed.nodes));
-          setEdges(parsed.edges ?? []);
-          setAnnotations(parseAnnotations(parsed.annotations));
-          setSelNode(null);
-          setSelEdge(null);
-          window.setTimeout(() => fitView({ padding: 0.18 }), 40);
-        } catch {
-          alert("这个文件不是合法的 FlowCraft 流程");
+      void file.text().then((text) => {
+        const result = parseFlowFile(text);
+        if (!result.ok) {
+          setImportReport(result);
+          showToast(summarizeImport(result));
+          return;
         }
-      };
-      reader.readAsText(file);
+        snapshot();
+        setNodes(migrateLegacyNoteAnchors(result.nodes));
+        setEdges(result.edges);
+        setAnnotations(result.annotations);
+        setSelNode(null);
+        setSelEdge(null);
+        setImportReport(result.issues.length || result.migrations.length ? result : null);
+        window.setTimeout(() => fitView({ padding: 0.18 }), 40);
+        showToast(summarizeImport(result));
+      });
     },
-    [fitView, setEdges, setNodes, snapshot],
+    [fitView, setEdges, setNodes, showToast, snapshot],
   );
 
   const printFlow = useCallback(() => {
@@ -1278,6 +1285,29 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   /* ---------- 多画布 / 快照 / 体检 ---------- */
   const canvasEnabled = !exampleMode && !bench;
   const activeCanvas = useMemo(() => canvases.find((c) => c.id === activeCanvasId) ?? null, [canvases, activeCanvasId]);
+
+  /** 评审报告：界面清单 / 连线 / 条件 / 批注 / 体检拼成一页，PM 直接贴需求文档。
+   *  依赖 activeCanvas（画布名做标题），所以定义在多画布区块而不是导出区块。 */
+  const exportReviewReport = useCallback(() => {
+    const report = buildReportHtml(canonicalNodes, edges, annotations, {
+      title: activeCanvas?.name ?? "FlowCraft 流程评审报告",
+    });
+    if (!report.screens) {
+      showToast("画布上还没有界面节点，先搭流程再导出报告");
+      return;
+    }
+    const exported = exportTextFile({
+      filename: `flowcraft-report-${Date.now()}.html`,
+      type: "text/html;charset=utf-8",
+      content: report.html,
+    });
+    showToast(
+      exported
+        ? `已导出评审报告：${report.screens} 个界面 / ${report.issues ? `${report.issues} 项体检待确认` : "体检通过"}`
+        : "导出评审报告失败：浏览器无法创建下载，请重试",
+    );
+  }, [activeCanvas, annotations, canonicalNodes, edges, showToast]);
+
 
   const openCanvasMenu = useCallback(() => {
     const rect = canvasMenuRef.current?.getBoundingClientRect();
@@ -1479,6 +1509,20 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [activeCanvasId],
   );
 
+  const renameSnapshotById = useCallback(
+    (snapId: string, rawName: string) => {
+      if (!activeCanvasId) return;
+      setSnapshots(renameSnapshot(localStorage, activeCanvasId, snapId, rawName));
+      setRenamingSnapId(null);
+    },
+    [activeCanvasId],
+  );
+
+  // QA 探针：每轮 Ego 回归从 window.__fcQA.collect() 拿确定性断言数据（docs/ego-smoke.md）
+  useEffect(() => {
+    installQaProbe(() => ({ nodes: canonicalNodes, edges }));
+  }, [canonicalNodes, edges]);
+
   const healthIssues = useMemo(() => (canvasEnabled ? scanFlowHealth(canonicalNodes, edges) : []), [canvasEnabled, canonicalNodes, edges]);
 
   const focusHealthIssue = useCallback(
@@ -1666,6 +1710,9 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                       <button role="menuitem" onClick={() => { exportPrototype(); setMenuOpen(false); }}>
                         导出交互原型 <span>单文件 HTML，可离线点击</span>
                       </button>
+                      <button role="menuitem" disabled={nodes.length === 0} onClick={() => { exportReviewReport(); setMenuOpen(false); }}>
+                        导出评审报告 <span>界面 / 连线 / 条件 / 批注 / 体检 一页看清</span>
+                      </button>
                       <button role="menuitem" onClick={() => { exportJson(); setMenuOpen(false); }}>
                         导出流程 JSON <span>含批注，可备份与版本管理</span>
                       </button>
@@ -1796,31 +1843,89 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
             ) : (
               <>
                 <div className="fc-panel-head">
-                  <b>快照</b>
+                  <b>版本时间线</b>
                   <span>{snapshots.length} / 30</span>
                   <button type="button" className="fc-btn fc-btn-primary fc-snap-take" onClick={takeSnapshot}>📷 拍摄快照</button>
                 </div>
                 <div className="fc-search-results">
                   {snapshots.length ? (
-                    snapshots.map((s) => (
-                      <div key={s.id} className="fc-snap-row">
-                        <div className="fc-snap-meta">
-                          <b>{s.name}{s.auto ? <span className="fc-snap-auto">自动</span> : null}</b>
-                          <span>{new Date(s.createdAt).toLocaleString("zh-CN", { hour12: false })}</span>
+                    <div className="fc-timeline">
+                      {groupSnapshotsByDay(snapshots).map((group) => (
+                        <div key={group.day} className="fc-tl-day">
+                          <div className="fc-tl-day-label">{group.day}</div>
+                          {group.items.map((s) => (
+                            <div key={s.id} className="fc-tl-item">
+                              <span className="fc-tl-dot" aria-hidden="true" />
+                              <div className="fc-snap-meta">
+                                {renamingSnapId === s.id ? (
+                                  <input
+                                    autoFocus
+                                    defaultValue={s.name}
+                                    aria-label="快照名称"
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") renameSnapshotById(s.id, (e.target as HTMLInputElement).value);
+                                      if (e.key === "Escape") setRenamingSnapId(null);
+                                    }}
+                                    onBlur={(e) => renameSnapshotById(s.id, e.target.value)}
+                                  />
+                                ) : (
+                                  <b>
+                                    {s.name}
+                                    {s.auto ? <span className="fc-snap-auto">自动</span> : null}
+                                  </b>
+                                )}
+                                <span>{new Date(s.createdAt).toLocaleTimeString("zh-CN", { hour12: false })}</span>
+                              </div>
+                              <div className="fc-snap-actions">
+                                <button type="button" className="fc-chip-btn" onClick={() => compareSnapshot(s)}>对比</button>
+                                <button type="button" className="fc-chip-btn" onClick={() => restoreSnapshot(s)}>恢复</button>
+                                <button type="button" className="fc-chip-btn" title="重命名" aria-label={`重命名 ${s.name}`} onClick={() => setRenamingSnapId(s.id)}>✎</button>
+                                <button type="button" className="fc-chip-btn" onClick={() => deleteSnapshotById(s.id)}>删除</button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div className="fc-snap-actions">
-                          <button type="button" className="fc-chip-btn" onClick={() => compareSnapshot(s)}>对比</button>
-                          <button type="button" className="fc-chip-btn" onClick={() => restoreSnapshot(s)}>恢复</button>
-                          <button type="button" className="fc-chip-btn" onClick={() => deleteSnapshotById(s.id)}>删除</button>
-                        </div>
-                      </div>
-                    ))
+                      ))}
+                    </div>
                   ) : (
-                    <p>还没有快照。切换画布或恢复快照前会自动存一份，也可以手动拍摄。</p>
+                    <p>还没有快照。切换画布或恢复快照前会自动存一份，也可以手动拍摄并命名。</p>
                   )}
                 </div>
               </>
             )}
+          </section>
+        ) : null}
+
+        {importReport ? (
+          <section className="fc-search-panel fc-import-panel" aria-label="导入检查结果">
+            <div className="fc-panel-head">
+              <b>导入检查</b>
+              <span>
+                {importReport.ok
+                  ? `文件版本 v${importReport.declaredVersion ?? "未声明"}${importReport.migrations.length ? " · 已迁移" : " · 结构无迁移"}`
+                  : "导入失败，当前画布未改动"}
+              </span>
+              <button type="button" className="fc-chip-btn" onClick={() => setImportReport(null)}>关闭</button>
+            </div>
+            {importReport.migrations.length ? (
+              <div className="fc-import-migrations">
+                {importReport.migrations.map((m, i) => (
+                  <div key={i}>⇪ {m}</div>
+                ))}
+              </div>
+            ) : null}
+            <div className="fc-search-results">
+              {importReport.issues.length ? (
+                importReport.issues.map((iss) => (
+                  <div key={iss.id} className={`fc-import-issue is-${iss.level}`}>
+                    <b>{iss.level === "error" ? "错误" : "提示"} · {iss.path}</b>
+                    <span>{iss.message}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="fc-health-ok">文件结构与数据完全合法，没有需要确认的项。</p>
+              )}
+            </div>
           </section>
         ) : null}
 

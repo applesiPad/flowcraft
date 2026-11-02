@@ -1,18 +1,31 @@
 /**
  * 流程健康检查：一键扫描画布上的常见流程缺陷（只读，不修改画布）。
  *
+ * 拓扑级：
  * - deadEnd 死路界面：没有任何出口连线的界面（若它本来就是流程终点，可忽略）。
  * - orphan 孤立界面：既没有入口也没有出口的界面（通常是忘了接线的草稿）。
  * - unwiredPrimary 未接线主按钮：主按钮（tone=primary）没有对应出口连线——
  *   用户最常点它，也是评审时最扎眼的断链。
  * - decisionIncomplete 判断分支不全：判断节点缺「是」或「否」出口，原型走查会默认走「是」。
  *
+ * 数据级（2026-11-02 二期）：
+ * - condVarUnknown 条件变量无来源：判断条件里的变量名在全图没有任何输入框使用——
+ *   预览/导出原型时该变量永远是空值，条件结果固定，演示时最容易翻车。
+ * - unnamedScreen 界面未命名：界面标题为空（评审报告、走查面包屑里显示不出来）。
+ *
  * 纯函数、无 DOM 依赖，Node 测试可直接 import。
  */
 import type { Edge, Node } from "@xyflow/react";
 import type { DecisionData, ScreenData } from "./types.ts";
+import { normalizeCondition } from "./prototypeLogic.ts";
 
-export type HealthIssueKind = "deadEnd" | "orphan" | "unwiredPrimary" | "decisionIncomplete";
+export type HealthIssueKind =
+  | "deadEnd"
+  | "orphan"
+  | "unwiredPrimary"
+  | "decisionIncomplete"
+  | "condVarUnknown"
+  | "unnamedScreen";
 
 export type HealthIssue = {
   /** 稳定 key：kind:nodeId[:elId] */
@@ -31,9 +44,18 @@ export const HEALTH_KIND_LABEL: Record<HealthIssueKind, string> = {
   orphan: "孤立界面",
   unwiredPrimary: "未接线主按钮",
   decisionIncomplete: "判断分支不全",
+  condVarUnknown: "条件变量无来源",
+  unnamedScreen: "界面未命名",
 };
 
-export const HEALTH_KIND_ORDER: HealthIssueKind[] = ["unwiredPrimary", "decisionIncomplete", "deadEnd", "orphan"];
+export const HEALTH_KIND_ORDER: HealthIssueKind[] = [
+  "unwiredPrimary",
+  "decisionIncomplete",
+  "condVarUnknown",
+  "deadEnd",
+  "orphan",
+  "unnamedScreen",
+];
 
 function titleOf(node: Node): string {
   return String((node.data as { title?: unknown })?.title ?? node.id);
@@ -102,6 +124,40 @@ export function scanFlowHealth(nodes: Node[], edges: Edge[]): HealthIssue[] {
       nodeId: node.id,
       title: titleOf(node),
       detail: `缺少「${missing}」出口；原型走查时缺失的分支会按默认「是」处理`,
+    });
+  }
+
+  // 条件变量对账：判断条件里的变量必须来自某个界面的输入框（el.name），否则永远是空值
+  const collectableVars = new Set<string>();
+  for (const node of screens) {
+    const data = node.data as unknown as ScreenData;
+    for (const el of data.elements ?? []) {
+      if (el.kind === "input" && el.name) collectableVars.add(el.name.trim());
+    }
+  }
+  for (const node of decisions) {
+    const cond = normalizeCondition((node.data as unknown as DecisionData).condition);
+    if (!cond || collectableVars.has(cond.variable)) continue;
+    issues.push({
+      id: `condVarUnknown:${node.id}`,
+      kind: "condVarUnknown",
+      nodeId: node.id,
+      title: titleOf(node),
+      detail: `条件变量「${cond.variable}」没有对应的输入框变量名，原型里这个条件永远按空值求值；请检查变量名拼写，或给某个输入框配上这个变量名`,
+    });
+  }
+
+  // 命名一致性：空标题的界面在报告和面包屑里显示不出来
+  for (const node of screens) {
+    const data = node.data as unknown as ScreenData;
+    const title = typeof data.title === "string" ? data.title.trim() : "";
+    if (title) continue;
+    issues.push({
+      id: `unnamedScreen:${node.id}`,
+      kind: "unnamedScreen",
+      nodeId: node.id,
+      title: node.id,
+      detail: "界面还没有命名，评审报告和走查面包屑里会显示成空白；请在属性面板里填写标题",
     });
   }
 

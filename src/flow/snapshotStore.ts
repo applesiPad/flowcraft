@@ -9,6 +9,7 @@
  */
 import type { Edge, Node } from "@xyflow/react";
 import type { CanvasFlow } from "./canvasStore.ts";
+import { MAX_CANVAS_NAME } from "./canvasStore.ts";
 import type { Annotation } from "./annotations.ts";
 import type { ScreenData } from "./types.ts";
 
@@ -53,6 +54,44 @@ export function removeSnapshot(storage: StorageLike, canvasId: string, id: strin
   const list = readSnapshots(storage, canvasId).filter((s) => s.id !== id);
   writeSnapshots(storage, canvasId, list);
   return list;
+}
+
+/** 重命名快照（时间线视图里的「改成业务可读的名字」）。空名视为取消。 */
+export function renameSnapshot(storage: StorageLike, canvasId: string, id: string, rawName: string): FlowSnapshot[] {
+  const name = rawName.replace(/\s+/g, " ").trim().slice(0, MAX_CANVAS_NAME);
+  if (!name) return readSnapshots(storage, canvasId);
+  const list = readSnapshots(storage, canvasId).map((s) => (s.id === id ? { ...s, name } : s));
+  writeSnapshots(storage, canvasId, list);
+  return list;
+}
+
+export type SnapshotDayGroup = { day: string; items: FlowSnapshot[] };
+
+/** 按自然日分组（新→旧）：今天 / 昨天 / M月D日。列表内同样按时间倒序。 */
+export function groupSnapshotsByDay(list: FlowSnapshot[], now = Date.now()): SnapshotDayGroup[] {
+  const sorted = [...list].sort((a, b) => b.createdAt - a.createdAt);
+  const keyOf = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  };
+  const labelOf = (ms: number) => {
+    const d = new Date(ms);
+    const nowD = new Date(now);
+    if (keyOf(ms) === keyOf(now)) return "今天";
+    const yesterday = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate() - 1);
+    if (d.getFullYear() === yesterday.getFullYear() && d.getMonth() === yesterday.getMonth() && d.getDate() === yesterday.getDate()) {
+      return "昨天";
+    }
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
+  };
+  const groups: SnapshotDayGroup[] = [];
+  for (const snap of sorted) {
+    const label = labelOf(snap.createdAt);
+    const last = groups[groups.length - 1];
+    if (last && last.day === label) last.items.push(snap);
+    else groups.push({ day: label, items: [snap] });
+  }
+  return groups;
 }
 
 /** 自动快照命名：同秒内多条也不会重名（带序号由调用方保证，这里只给默认名） */

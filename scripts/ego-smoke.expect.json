@@ -1,0 +1,11 @@
+{
+  "name": "flowcraft 电商示例冒烟基线",
+  "url": "http://localhost:5177/?example=ecommerce&cull=0",
+  "nodes": 12,
+  "edges": 14,
+  "screens": 8,
+  "decisions": 2,
+  "hotspots": 31,
+  "inputVars": ["code", "phone"],
+  "issueKinds": ["unwiredPrimary", "deadEnd"]
+}

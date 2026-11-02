@@ -6,8 +6,10 @@ import {
   addSnapshot,
   autoSnapshotName,
   diffFlows,
+  groupSnapshotsByDay,
   readSnapshots,
   removeSnapshot,
+  renameSnapshot,
   type FlowSnapshot,
 } from "../src/flow/snapshotStore.ts";
 import type { Annotation } from "../src/flow/annotations.ts";
@@ -168,4 +170,31 @@ test("diffFlows: 新增连线可读描述", () => {
   target.edges.push(flowEdge("e3", "d", "no", "a", "否，返回"));
   const d = diffFlows(baseFlow(), target);
   assert.deepEqual(d.edgesAdded, ["「否，返回」已登录？·no → 登录"]);
+});
+
+test("时间线：重命名快照（trim / 40 字上限 / 空名取消）", () => {
+  const storage = memoryStorage();
+  addSnapshot(storage, "c1", snap("s1", "自动 10:00:00", 1000, true));
+  const renamed = renameSnapshot(storage, "c1", "s1", "  首版 评审稿  ");
+  assert.equal(renamed[0].name, "首版 评审稿");
+  assert.equal(renameSnapshot(storage, "c1", "s1", "   ")[0].name, "首版 评审稿");
+  const long = renameSnapshot(storage, "c1", "s1", "x".repeat(50));
+  assert.equal(long[0].name.length, 40);
+});
+
+test("时间线：按自然日分组（今天/昨天/M月D日），组与组内都是新→旧", () => {
+  const now = new Date(2026, 10, 2, 15, 0, 0).getTime(); // 2026-11-02 15:00
+  const list = [
+    snap("today-1", "下午", new Date(2026, 10, 2, 14, 0).getTime()),
+    snap("today-2", "上午", new Date(2026, 10, 2, 9, 0).getTime()),
+    snap("yest", "昨晚", new Date(2026, 10, 1, 22, 0).getTime()),
+    snap("older", "上月", new Date(2026, 9, 30, 8, 0).getTime()),
+  ];
+  const groups = groupSnapshotsByDay(list, now);
+  assert.equal(groups.length, 3);
+  assert.equal(groups[0].day, "今天");
+  assert.deepEqual(groups[0].items.map((s) => s.id), ["today-1", "today-2"]);
+  assert.equal(groups[1].day, "昨天");
+  assert.equal(groups[2].day, "10月30日");
+  assert.equal(groups[2].items[0].id, "older");
 });

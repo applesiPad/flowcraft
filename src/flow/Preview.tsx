@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Edge, Node } from "@xyflow/react";
 import { ScreenView } from "./ScreenView";
 import { firstValidationError, namedInputs, normalizeCondition, pickDecisionHandle, resolveFlowTarget } from "./prototypeLogic";
+import { debugVarEntries, formatTrail, varSourceMap, type TrailStep } from "./previewDebug";
 import type { DecisionData, ScreenData } from "./types";
 
 type Props = {
@@ -28,10 +29,17 @@ export function Preview({ nodes, edges, startId, onExit }: Props) {
   const [vars, setVars] = useState<Record<string, string>>({});
   /** 当前界面校验失败的元素 id 与提示 */
   const [errorElIds, setErrorElIds] = useState<ReadonlySet<string>>(new Set());
-
+  /** 调试面板开关：变量表 + 走查轨迹 */
+  const [debugOpen, setDebugOpen] = useState(false);
+  /** 实际走过的界面轨迹：回退不抹掉，重新开始才清空（与面包屑语义不同） */
+  const [trail, setTrail] = useState<TrailStep[]>(() =>
+    firstScreen ? [{ screenId: firstScreen.id, title: (firstScreen.data as unknown as ScreenData).title || firstScreen.id, via: null }] : [],
+  );
   const currentId = stack[stack.length - 1];
   const current = nodes.find((n) => n.id === currentId);
   const display = current && current.type === "screen" ? (current.data as unknown as ScreenData) : null;
+
+  const varRows = useMemo(() => debugVarEntries(vars, varSourceMap(nodes)), [vars, nodes]);
 
   useEffect(() => {
     if (firstScreen && stack.length === 0) setStack([firstScreen.id]);
@@ -69,6 +77,11 @@ export function Preview({ nodes, edges, startId, onExit }: Props) {
     setErrorElIds(new Set());
     setAnimDir("fwd");
     setAnimKey((k) => k + 1);
+    setTrail(
+      firstScreen
+        ? [{ screenId: firstScreen.id, title: (firstScreen.data as unknown as ScreenData).title || firstScreen.id, via: null }]
+        : [],
+    );
   }, [firstScreen]);
 
   const onInputChange = useCallback(
@@ -116,22 +129,44 @@ export function Preview({ nodes, edges, startId, onExit }: Props) {
         return;
       }
       const decisionNode = nodes.find((n) => n.id === link.target);
+      let via: string = (link.data?.label as string) || "跳转";
       if (decisionNode?.type === "decision") {
         const cond = normalizeCondition((decisionNode.data as unknown as DecisionData).condition);
+        const yes = pickDecisionHandle(decisionNode.data as unknown as DecisionData, merged) === "yes";
+        const dd = decisionNode.data as unknown as DecisionData;
         if (cond) {
-          const yes = pickDecisionHandle(decisionNode.data as unknown as DecisionData, merged) === "yes";
-          const dd = decisionNode.data as unknown as DecisionData;
           showToast(`条件「${cond.variable}」${yes ? "成立" : "不成立"} → 走「${yes ? dd.yes ?? "是" : dd.no ?? "否"}」`);
         }
+        via = `${via}（${yes ? dd.yes ?? "是" : dd.no ?? "否"}）`;
       }
       setVars(merged);
       setErrorElIds(new Set());
       setAnimDir("fwd");
       setStack((s) => [...s, target]);
       setAnimKey((k) => k + 1);
+      const targetNode = nodes.find((n) => n.id === target);
+      setTrail((t) =>
+        t.concat({
+          screenId: target,
+          title: (targetNode?.data as unknown as ScreenData | undefined)?.title || target,
+          via,
+        }),
+      );
     },
     [edges, currentId, current, showToast, nodes, inputs, vars],
   );
+
+  const copyTrail = useCallback(() => {
+    const text = formatTrail(trail);
+    if (!text) return;
+    const done = () => showToast("已复制走查路径");
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => done());
+    } else {
+      done();
+    }
+    // 无剪贴板权限时按钮仍给反馈；路径文本始终显示在面板里可手动复制
+  }, [trail, showToast]);
 
   const inputValues = useMemo(() => {
     if (!display || !currentId) return {};
@@ -150,6 +185,14 @@ export function Preview({ nodes, edges, startId, onExit }: Props) {
           </span>
         </div>
         <div className="fc-preview-actions">
+          <button
+            className={`fc-btn${debugOpen ? " fc-btn-primary" : ""}`}
+            onClick={() => setDebugOpen((v) => !v)}
+            aria-pressed={debugOpen}
+            title="变量表与走查轨迹"
+          >
+            调试
+          </button>
           <button className="fc-btn" onClick={goBack} disabled={stack.length <= 1}>
             ← 返回
           </button>
@@ -179,6 +222,43 @@ export function Preview({ nodes, edges, startId, onExit }: Props) {
         ) : (
           <div className="fc-preview-empty">当前节点不是界面节点，无法预览。请从界面节点开始。</div>
         )}
+        {debugOpen ? (
+          <aside className="fc-preview-debug" aria-label="预览调试面板">
+            <div className="fc-debug-sec">
+              <b>变量表</b>
+              <span>{varRows.length || "空"}</span>
+            </div>
+            {varRows.length ? (
+              <div className="fc-debug-vars">
+                {varRows.map((row) => (
+                  <div key={row.name} className="fc-debug-var">
+                    <code>{row.name}</code>
+                    <em>{row.value === "" ? '""' : row.value}</em>
+                    <span>{row.source}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="fc-debug-hint">填写带变量名的输入框或经过判断节点后，变量值会出现在这里。</p>
+            )}
+            <div className="fc-debug-sec">
+              <b>走查轨迹</b>
+              <button type="button" className="fc-chip-btn" onClick={copyTrail}>复制</button>
+            </div>
+            {trail.length > 1 ? (
+              <ol className="fc-debug-trail">
+                {trail.map((step, i) => (
+                  <li key={`${step.screenId}-${i}`}>
+                    {i > 0 ? <em>{step.via ?? "?"}</em> : null}
+                    <span className={i === trail.length - 1 ? "is-current" : ""}>{step.title}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="fc-debug-hint">从起点点击控件后，实际走过的界面序列会记录在这里（返回不抹掉，重新开始清空）。</p>
+            )}
+          </aside>
+        ) : null}
         {toast ? <div className="fc-toast">{toast}</div> : null}
       </div>
       <div className="fc-preview-path">
