@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useStore, type EdgeProps } from "@xyflow/react";
-import { createBackEdgeLanePath, createBalancedBackEdgePath, normalizeEdgeRouteMode } from './edgeRouting';
+import { createBackEdgeLanePath, createBalancedBackEdgePath, normalizeEdgeRouteMode, bezierCurvePath } from './edgeRouting';
 import { routeWithCache } from './edgeRoutingCache';
 import {
   laneGroupForEdge,
@@ -61,7 +61,7 @@ function smoothStepLabelPoint(options: {
   if (sourceHorizontal) {
     points.push({ x: sourceX + (sourcePosition === "right" ? offset : -offset), y: sourceY });
   } else {
-    points.push({ x: sourceX, y: sourceY + (sourcePosition === "bottom" ? offset : -offset) });
+    points.push({ x: sourceX, y: sourceY + (sourcePosition === "bottom" ? -offset : offset) });
   }
 
   if (sourceHorizontal && targetHorizontal) {
@@ -111,7 +111,7 @@ function placeLabelClearOfTarget(
 
 export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, data } = props;
-  // 与“单条边”无关的量（zoom / 全部节点几何 / lane 分组 / 可视区）改为共享派生缓存：
+  // 与"单条边"无关的量（zoom / 全部节点几何 / lane 分组 / 可视区）改为共享派生缓存：
   // 同一帧内所有边命中同一份 DerivedEdgeFlowState，大图每帧只算一次而不是 E 次。
   const derived = useStore(selectDerivedEdgeFlowState);
   const zoom = derived.zoom;
@@ -197,24 +197,18 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
     });
 
     if (waypoints.length === 2) {
-      // 无碰撞：内置光滑路由负责视觉，标签仍用同一套目标侧锚点规则
-      [path, labelX, labelY] = getSmoothStepPath({
-        sourceX,
-        sourceY,
-        targetX,
-        targetY,
-        sourcePosition,
-        targetPosition,
-        borderRadius: 14,
-        offset: 18,
-      });
+      // 无碰撞：使用 ComfyUI 风格贝塞尔曲线
+      path = bezierCurvePath(
+        { x: sourceX, y: sourceY },
+        { x: targetX, y: targetY }
+      );
       const anchor = smoothStepLabelPoint({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, laneOffset: laneIndex });
       const point = placeLabelClearOfTarget(anchor, targetX, targetY, targetPosition, tgtNode?.measured?.width ?? 320, zoom);
       labelX = point.x;
       labelY = point.y;
     } else {
       // 有碰撞：同一条绕行路径同时决定描边与标签，标签靠近目标入口
-      path = roundedPath(waypoints, 14);
+      path = roundedPath(waypoints, 18);
       const anchor = chooseEdgeLabelAnchor(waypoints, { target: { x: targetX, y: targetY }, laneOffset: laneIndex });
       const point = placeLabelClearOfTarget(anchor.point, targetX, targetY, targetPosition, tgtNode?.measured?.width ?? 320, zoom);
       labelX = point.x;
@@ -227,7 +221,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const targetName = typeof targetTitle === "string" && targetTitle.trim() ? targetTitle.trim() : "";
   const destination = targetName ? `${direction} ${targetName}` : direction;
   // 同一目标入口的所有边共用一组尺寸和 lane 信息，否则每条边会各自判断边界，
-  // 出现“前两条在左、第三条跳到上方”的断裂布局。
+  // 出现"前两条在左、第三条跳到上方"的断裂布局。
   const peerCount = laneGroup.ids.length;
   const size = laneGroup.sizes[laneIndex] ?? estimateEdgeLabelSize(label, destination, zoom);
   const targetAbsolute = tgtNode?.internals?.positionAbsolute;

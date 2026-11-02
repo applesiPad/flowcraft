@@ -474,6 +474,21 @@ export function routeAroundNodes(
 }
 
 /**
+ * ComfyUI 风格贝塞尔曲线：水平出口 + 自然弯曲。
+ * 控制点偏移量根据距离动态调整，使曲线流畅自然。
+ */
+export function bezierCurvePath(from: Point, to: Point): string {
+  const dx = Math.abs(to.x - from.x);
+  // 控制点偏移量：短距离用较小值，长距离按比例增大
+  const offset = Math.max(60, Math.min(dx * 0.4, 300));
+  const cp1x = from.x + offset;
+  const cp1y = from.y;
+  const cp2x = to.x - offset;
+  const cp2y = to.y;
+  return `M${from.x},${from.y} C${cp1x},${cp1y} ${cp2x},${cp2y} ${to.x},${to.y}`;
+}
+
+/**
  * 完整路由：检测所有障碍，并对穿过节点的直线生成避障路径。
  * 返回值长度为 2 表示无需绕行，edges.tsx 可继续使用自带平滑路由。
  */
