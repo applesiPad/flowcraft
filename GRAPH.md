@@ -42,13 +42,17 @@ flowcraft/
 │     ├─ exportGeometry.ts   节点尺寸解析与导出包围盒
 │     ├─ exportHtml.ts       单文件 HTML 原型导出（内嵌播放器）
 │     ├─ exportLayout.ts     视口适配、PDF 排版、文件名
+│     ├─ exportReport.ts     评审报告导出（HTML 格式，含界面/连线/判断/批注/体检）
 │     ├─ exportTypes.ts      画布导出选项与结果类型
-│     ├─ flowHealth.ts       流程健康检查：四类缺陷扫描
+│     ├─ flowHealth.ts       流程健康检查：四类缺陷扫描 + 条件变量对账 + 无名界面检测
 │     ├─ history.ts          增量撤销/重做快照
 │     ├─ nodes.tsx           Screen / Decision / Action / Note 节点渲染
 │     ├─ noteLayout.ts       备注锚定、旧存档迁移、级联删除
+│     ├─ previewDebug.ts     预览调试面板：变量表 + 走查轨迹
 │     ├─ prototypeLogic.ts   原型逻辑共享模块：条件求值/输入校验/跳转解析
+│     ├─ qaProbe.ts          QA 探针：window.__fcQA 自动化验收接口
 │     ├─ sample.ts           电商示例与 6 种内置界面模板
+│     ├─ schemaMigrate.ts    Schema 版本迁移与导入校验
 │     ├─ snapshotStore.ts    版本快照存储 + 结构化 diff
 │     ├─ templateMarket.ts   模板校验、搜索、去重、Bundle 导入导出
 │     ├─ templatePacks.ts    内置行业模板包定义与实例化
@@ -269,7 +273,7 @@ graph TD
 ## 7. 验证清单
 
 ```powershell
-npm test          # 193 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性
+npm test          # 214 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性、schema 迁移、预览调试、评审报告、QA 探针
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
@@ -337,6 +341,8 @@ npm run dev -- --port 5177
 已完成（2026-11-02）：模板预览缩略图（`templateThumbnails.ts` 自包含 SVG，纯函数无 DOM 依赖）+ 内置行业模板包（`templatePacks.ts` 3 个业务链路包，点击/拖入整体插入、一次撤销回退）。Ego round6 回归 PASS：电商示例 14 边锚点逐字节一致、调色板 6 缩略图 + 3 包卡片、搜索过滤、点击插入 12/14→21/24 与拖入 HR 包均一次撤销恢复。
 
 已完成（2026-11-02）：原型逻辑（`prototypeLogic.ts` 共享求值器，Ego round7 42/42 PASS）；多画布管理、版本快照与对比、流程健康检查（`canvasStore.ts` / `snapshotStore.ts` / `flowHealth.ts`，Ego round8 22/22 PASS）。
+
+已完成（2026-11-02）：Schema 版本迁移与导入校验（`schemaMigrate.ts`，支持 v1→v2→v3 自动迁移，逐项校验并生成可读报告）；流程健康检查增强（条件变量对账、无名界面检测）；预览调试面板（`previewDebug.ts`，变量表 + 走查轨迹）；评审报告导出（`exportReport.ts`，HTML 格式含界面/连线/判断/批注/体检）；版本时间线（按天分组 + 重命名）；QA 探针（`qaProbe.ts`，`window.__fcQA` 自动化验收接口）。Ego round9 验收 PASS：探针/时间线/调试面板/导入检查。
 
 ---
 
