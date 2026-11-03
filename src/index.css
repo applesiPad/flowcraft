@@ -1516,6 +1516,119 @@ button {
   gap: 6px;
 }
 
+/* 头部同时是拖把手：grab 光标 + hover 时提示点浮现 */
+.fc-ai-head {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.fc-ai-head:active {
+  cursor: grabbing;
+}
+
+.fc-ai-head-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--fc-muted);
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+}
+
+.fc-ai-head:hover .fc-ai-head-hint {
+  opacity: 0.85;
+}
+
+/* 拖离默认位置后成为浮动面板：更强的投影表达"可移动"层级 */
+.fc-ai-panel.is-floating {
+  right: auto;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+}
+
+.fc-ai-panel.is-floating .fc-ai-head-hint {
+  opacity: 0.85;
+}
+
+/* 选中界面上下文条：点击卡片即显示它的出口状态与补线快捷操作 */
+.fc-ai-context {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--fc-success) 30%, transparent);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--fc-success) 7%, transparent);
+}
+
+.fc-ai-context.is-dead {
+  border-color: color-mix(in oklab, var(--fc-warning) 42%, transparent);
+  background: color-mix(in oklab, var(--fc-warning) 9%, transparent);
+}
+
+.fc-ai-context-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fc-ai-context-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-ai-context-meta {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--fc-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fc-ai-context-note {
+  font-size: 11px;
+  color: var(--fc-muted);
+}
+
+.fc-ai-context-fix {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  color: var(--fc-text);
+  background: var(--fc-surface-card);
+  border: 1px solid var(--fc-border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.fc-ai-context-fix:hover {
+  border-color: color-mix(in oklab, var(--fc-accent) 55%, transparent);
+  background: color-mix(in oklab, var(--fc-accent) 8%, var(--fc-surface-card));
+}
+
+.fc-ai-context-fix em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--fc-accent), var(--fc-accent-2));
+}
+
 .fc-ai-badge {
   display: inline-flex;
   align-items: center;

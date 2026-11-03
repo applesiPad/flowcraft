@@ -100,6 +100,8 @@ const TEMPLATE_STORAGE_KEY = "flowcraft.templates.v1";
 const ANNOTATION_STORAGE_KEY = "flowcraft.annotations.v1";
 /** 可视区裁剪开关持久化（2026-11-01 基线测量后默认开启，见 docs/perf-baseline-2026-11-01.md） */
 const CULL_STORAGE_KEY = "flowcraft.cull.v1";
+/** AI 面板手动拖放后的位置（视口坐标），让用户把面板放到不挡画布的地方 */
+const AI_PANEL_POS_KEY = "flowcraft.aiPanelPos.v1";
 const EMPTY_HOTSPOT_KEYS = new Set<string>();
 
 type SearchItem = {
@@ -192,6 +194,17 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiPlan, setAiPlan] = useState<AiPlanResult | null>(null);
+  /** AI 面板拖放位置（fixed 视口坐标，左上角）。null = 未拖过，跟随默认右上位 */
+  const [aiPanelPos, setAiPanelPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(AI_PANEL_POS_KEY) ?? "null") as { x: number; y: number } | null;
+      return raw && typeof raw.x === "number" && typeof raw.y === "number" ? raw : null;
+    } catch {
+      return null;
+    }
+  });
+  const aiPanelRef = useRef<HTMLElement | null>(null);
+  const aiPanelDrag = useRef<{ dx: number; dy: number } | null>(null);
   const [snapshots, setSnapshots] = useState<FlowSnapshot[]>([]);
   const [renamingSnapId, setRenamingSnapId] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<{ name: string; diff: FlowDiff } | null>(null);
@@ -535,6 +548,107 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   );
 
   /* ---------- AI 助手 ---------- */
+  /** AI 面板头部拖拽：按住拖动，松手时钳制回视口内并持久化。 */
+  const onAiPanelDragStart = useCallback((event: React.PointerEvent) => {
+    // 只响应主键；面板内文本输入/按钮的点击不触发拖动
+    if (event.button !== 0) return;
+    const panel = aiPanelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    // 记录指针相对面板左上角的偏移，move 时保持这段相对距离
+    aiPanelDrag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    if (!aiOpen) return;
+    const onMove = (event: PointerEvent) => {
+      const drag = aiPanelDrag.current;
+      const panel = aiPanelRef.current;
+      if (!drag || !panel) return;
+      const rect = panel.getBoundingClientRect();
+      const maxX = window.innerWidth - rect.width;
+      const maxY = window.innerHeight - rect.height;
+      const next = {
+        x: Math.min(Math.max(event.clientX - drag.dx, 8), Math.max(maxX, 8)),
+        y: Math.min(Math.max(event.clientY - drag.dy, 8), Math.max(maxY, 8)),
+      };
+      setAiPanelPos(next);
+    };
+    const onUp = () => {
+      if (!aiPanelDrag.current) return;
+      aiPanelDrag.current = null;
+      // 松手时持久化；面板被拖出视口外时先钳制再存
+      setAiPanelPos((pos) => {
+        if (!pos) return pos;
+        const rect = aiPanelRef.current?.getBoundingClientRect();
+        const clamped = rect
+          ? {
+              x: Math.min(Math.max(pos.x, 8), Math.max(window.innerWidth - rect.width, 8)),
+              y: Math.min(Math.max(pos.y, 8), Math.max(window.innerHeight - rect.height, 8)),
+            }
+          : pos;
+        try {
+          localStorage.setItem(AI_PANEL_POS_KEY, JSON.stringify(clamped));
+        } catch {
+          /* 存储满/禁用时静默，只影响下次打开位置 */
+        }
+        return clamped;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [aiOpen]);
+
+  /** 窗口缩放时把面板拉回可视区，避免面板留在屏幕外。 */
+  useEffect(() => {
+    if (!aiOpen || !aiPanelPos) return;
+    const onResize = () => {
+      const rect = aiPanelRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setAiPanelPos((pos) =>
+        pos
+          ? {
+              x: Math.min(Math.max(pos.x, 8), Math.max(window.innerWidth - rect.width, 8)),
+              y: Math.min(Math.max(pos.y, 8), Math.max(window.innerHeight - rect.height, 8)),
+            }
+          : pos,
+      );
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [aiOpen, aiPanelPos]);
+
+  /** 复位面板位置（双击拖把手），清掉持久化记录回到默认右上位。 */
+  const resetAiPanelPos = useCallback(() => {
+    setAiPanelPos(null);
+    try {
+      localStorage.removeItem(AI_PANEL_POS_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  /** 全画布死路补线建议（面板与选中上下文共用同一份）。 */
+  const wireSuggestions = useMemo(
+    () => suggestWires(screenViewsForSuggestion(nodes), edges),
+    [nodes, edges],
+  );
+
+  /** 按节点 id 取界面标题（上下文条展示用），找不到时回退到 id。 */
+  const wireTargetTitle = useCallback(
+    (id: string) => {
+      const n = nodes.find((x) => x.id === id);
+      const data = n?.data as unknown as ScreenData | undefined;
+      return (typeof data?.title === "string" && data.title) || id;
+    },
+    [nodes],
+  );
+
   const runAiPlan = useCallback(
     (text: string) => {
       const trimmed = text.trim();
@@ -1349,6 +1463,20 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selNode), [nodes, selNode]);
   const selectedEdge = useMemo(() => edges.find((e) => e.id === selEdge), [edges, selEdge]);
 
+  /** 选中界面的上下文：AI 面板顶部显示它的出口状态与快捷建议。 */
+  const selectedScreenContext = useMemo(() => {
+    const node = selectedNode;
+    if (!node || node.type !== "screen") return null;
+    const data = node.data as unknown as ScreenData;
+    const title = typeof data?.title === "string" ? data.title : node.id;
+    const outEdges = edges.filter((e) => e.source === node.id);
+    const inEdges = edges.filter((e) => e.target === node.id);
+    const deadEnd = outEdges.length === 0;
+    // 这张卡的死路补线建议（若有），点「采纳」即可接上
+    const suggestion = deadEnd ? wireSuggestions.find((s) => s.source === node.id) ?? null : null;
+    return { id: node.id, title, outCount: outEdges.length, inCount: inEdges.length, deadEnd, suggestion };
+  }, [selectedNode, edges, wireSuggestions]);
+
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
@@ -1972,13 +2100,48 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         ) : null}
 
         {aiOpen ? (() => {
-          const wireSuggestions = suggestWires(screenViewsForSuggestion(nodes), edges);
           return (
-            <section className="fc-search-panel fc-ai-panel" aria-label="AI 助手">
-              <div className="fc-panel-head fc-ai-head">
+            <section
+              ref={aiPanelRef}
+              className={`fc-search-panel fc-ai-panel${aiPanelPos ? " is-floating" : ""}`}
+              style={aiPanelPos ? { left: aiPanelPos.x, top: aiPanelPos.y, right: "auto" } : undefined}
+              aria-label="AI 助手"
+            >
+              <div
+                className="fc-panel-head fc-ai-head"
+                onPointerDown={onAiPanelDragStart}
+                onDoubleClick={resetAiPanelPos}
+                title="拖动移动面板 · 双击复位"
+              >
                 <b><span className="fc-ai-badge" aria-hidden="true"><Icon name="sparkle" size={11} /></span>AI 助手</b>
-                <span>描述流程，自动生成画布</span>
+                <span className="fc-ai-head-hint" aria-hidden="true"><Icon name="grip" size={12} /> 拖动移动</span>
               </div>
+              {selectedScreenContext ? (
+                <div className={`fc-ai-context${selectedScreenContext.deadEnd ? " is-dead" : ""}`}>
+                  <div className="fc-ai-context-row">
+                    <span className="fc-ai-context-title" title={selectedScreenContext.title}>
+                      {selectedScreenContext.deadEnd ? "🚧" : "✅"} {selectedScreenContext.title}
+                    </span>
+                    <span className="fc-ai-context-meta">
+                      入 {selectedScreenContext.inCount} · 出 {selectedScreenContext.outCount}
+                    </span>
+                  </div>
+                  {selectedScreenContext.deadEnd && selectedScreenContext.suggestion ? (
+                    <button
+                      type="button"
+                      className="fc-ai-context-fix"
+                      onClick={() => acceptWireSuggestion(selectedScreenContext.suggestion!)}
+                      title={selectedScreenContext.suggestion.reason}
+                    >
+                      建议接到「{wireTargetTitle(selectedScreenContext.suggestion.target)}」 <em>一键接线</em>
+                    </button>
+                  ) : selectedScreenContext.deadEnd ? (
+                    <span className="fc-ai-context-note">这是死路界面：还没有任何出口连线</span>
+                  ) : (
+                    <span className="fc-ai-context-note">选中即看出口状态；死路界面会在这里给出补线建议</span>
+                  )}
+                </div>
+              ) : null}
               <textarea
                 className="fc-ai-input"
                 value={aiText}

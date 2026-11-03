@@ -34,7 +34,8 @@ type IconName =
   | "panelRight"
   | "link"
   | "sun"
-  | "moon";
+  | "moon"
+  | "grip";
 
 const paths: Record<IconName, React.ReactNode> = {
   sparkle: (
@@ -225,6 +226,16 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   moon: <path d="M20.2 15.1A8.4 8.4 0 0 1 8.9 3.8 8.6 8.6 0 1 0 20.2 15.1z" />,
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="18" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="18" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 16, fallback }: { name?: string; size?: number; fallback?: string }) {
