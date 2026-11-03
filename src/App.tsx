@@ -27,7 +27,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { ActionNode, DecisionNode, NoteNode, ScreenNode } from "./flow/nodes";
-import { FlowEdge } from "./flow/edges";
+import { FlowEdge, BezierConnectionLine } from "./flow/edges";
 import { Palette, type PaletteDragPayload } from "./flow/Palette";
 import { Inspector } from "./flow/Inspector";
 import { Preview } from "./flow/Preview";
@@ -36,7 +36,7 @@ import { moveElementZ, type ZOrderAction } from "./flow/elementEditor";
 import type { EdgeRouteMode } from "./flow/edgeRouting";
 import { EditorContext } from "./flow/ScreenView";
 import { initialEdges, initialNodes, screenTemplates } from "./flow/sample";
-import { buildPackGraph, packBounds, screenPacks, type ScreenPack } from "./flow/templatePacks";
+import { buildPackGraph, packBounds, screenPacks, PACK_NODE_SIZE, type ScreenPack } from "./flow/templatePacks";
 import { buildPrototypeHtml } from "./flow/exportHtml";
 import { resolveFlowTarget } from "./flow/prototypeLogic";
 import {
@@ -63,6 +63,7 @@ import {
   type FlowSnapshot,
 } from "./flow/snapshotStore";
 import { HEALTH_KIND_LABEL, scanFlowHealth, type HealthIssue } from "./flow/flowHealth";
+import { AI_EXAMPLES, buildAiPack, findBlankAnchor, planFlowFromText, screenViewsForSuggestion, suggestWires, type AiPlanResult, type WireSuggestion } from "./flow/aiFlow";
 import { parseFlowFile, summarizeImport, type ImportResult } from "./flow/schemaMigrate";
 import { buildReportHtml } from "./flow/exportReport";
 import { installQaProbe } from "./flow/qaProbe";
@@ -188,6 +189,9 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [confirmDeleteCanvasId, setConfirmDeleteCanvasId] = useState<string | null>(null);
   const [healthOpen, setHealthOpen] = useState(false);
   const [snapOpen, setSnapOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiText, setAiText] = useState("");
+  const [aiPlan, setAiPlan] = useState<AiPlanResult | null>(null);
   const [snapshots, setSnapshots] = useState<FlowSnapshot[]>([]);
   const [renamingSnapId, setRenamingSnapId] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<{ name: string; diff: FlowDiff } | null>(null);
@@ -366,6 +370,30 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     pendingHistory.current = { nodes, edges, key: coalesceKey };
   }, [nodes, edges]);
 
+  /* 包装 onNodesChange：在 React Flow 内置删除（Delete/Backspace）前拍快照，
+     否则 pendingHistory 没有基线，diff 为空不会记录历史 => 撤销失效 */
+  const wrappedOnNodesChange = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      const hasRemoval = changes.some(
+        (c: { type?: string }) => c.type === "remove",
+      );
+      if (hasRemoval) snapshot();
+      onNodesChange(changes);
+    },
+    [onNodesChange, snapshot],
+  );
+
+  const wrappedOnEdgesChange = useCallback(
+    (changes: Parameters<typeof onEdgesChange>[0]) => {
+      const hasRemoval = changes.some(
+        (c: { type?: string }) => c.type === "remove",
+      );
+      if (hasRemoval) snapshot();
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, snapshot],
+  );
+
   useEffect(() => {
     const baseline = pendingHistory.current;
     if (!baseline || (baseline.nodes === nodes && baseline.edges === edges)) return;
@@ -506,6 +534,50 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [createNode, getViewport, insertPack, setNodes, showToast, snapshot],
   );
 
+  /* ---------- AI 助手 ---------- */
+  const runAiPlan = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        setAiPlan(null);
+        return;
+      }
+      const plan = planFlowFromText(trimmed);
+      if (!plan.steps.length) {
+        setAiPlan(null);
+        showToast("没识别出步骤：用「→」或顿号把流程串起来，例如「首页 → 详情 → 支付」");
+        return;
+      }
+      setAiPlan(buildAiPack(plan, `AI：${plan.scenario}`));
+    },
+    [showToast],
+  );
+
+  const insertAiPack = useCallback(
+    (result: AiPlanResult) => {
+      if (result.problems.length) {
+        showToast(`生成的流程有问题：${result.problems[0]}`);
+        return;
+      }
+      // 锚点不能落在现有卡片上：物理重叠会让「线不穿卡」不变式几何无解。
+      // 按现有节点包围盒自动找空白带（右侧优先，放不下放下方）。
+      const bounds = packBounds(result.pack);
+      const anchor = findBlankAnchor(
+        nodes
+          .filter((n) => n.type !== "note")
+          .map((n) => ({
+            x: n.position.x,
+            y: n.position.y,
+            width: typeof n.style?.width === "number" ? n.style.width : n.measured?.width ?? PACK_NODE_SIZE.screen.w,
+            height: n.measured?.height ?? PACK_NODE_SIZE.screen.h,
+          })),
+        { width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY },
+      );
+      insertPack(result.pack, { x: anchor.x - bounds.minX, y: anchor.y - bounds.minY });
+    },
+    [nodes, insertPack, showToast],
+  );
+
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       const raw = event.dataTransfer.getData("application/flowcraft");
@@ -532,35 +604,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   );
 
   /* ---------- 连线 ---------- */
-  const isValidConnection = useCallback(
-    (conn: Connection | Edge) => {
-      const source = nodes.find((n) => n.id === conn.source);
-      const target = nodes.find((n) => n.id === conn.target);
-      if (!source || !target || source.id === target.id) return false;
-      const handle = (conn as Connection).targetHandle;
-      // 界面节点只认左侧入口锚点：热点→热点的连线在交互流程图里没有语义
-      if (target.type === "screen") return handle === HOTSPOT_IN;
-      if (target.type === "decision" || target.type === "action") return !handle || handle === "in";
-      return false;
-    },
-    [nodes],
-  );
-
-  const onConnectEnd = useCallback(
-    (_event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
-      if (connectionState.isValid === false) {
-        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
-      }
-    },
-    [showToast],
-  );
-
-  const onConnect = useCallback(
+  const commitConnection = useCallback(
     (connection: Connection) => {
-      if (!isValidConnection(connection)) {
-        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
-        return;
-      }
       snapshot();
       const source = nodes.find((n) => n.id === connection.source);
       const srcData = source?.data as unknown as ScreenData | undefined;
@@ -579,7 +624,105 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         ),
       );
     },
-    [isValidConnection, markerEnd, nodes, setEdges, snapshot, showToast],
+    [markerEnd, nodes, setEdges, snapshot],
+  );
+
+  /** 采纳一条 AI 补线建议：走快照 + addEdge，与手动连线同一管线（可撤销）。 */
+  const acceptWireSuggestion = useCallback(
+    (suggestion: WireSuggestion) => {
+      const source = nodes.find((n) => n.id === suggestion.source);
+      if (!source) return;
+      const srcData = source.data as unknown as ScreenData;
+      // 建议里的 handle 是轻量探测值；这里从节点真实元素里解析主按钮热点
+      const hotspots = (srcData.elements ?? []).filter((el) => el.hotspot);
+      const primary = hotspots.find((el) => el.tone === "primary") ?? hotspots[0];
+      if (!primary) {
+        showToast(`「${srcData.title ?? source.id}」没有可用的热点控件，先加一个按钮再接线`);
+        return;
+      }
+      commitConnection({
+        source: suggestion.source,
+        sourceHandle: primary.id,
+        target: suggestion.target,
+        targetHandle: "in",
+      });
+      showToast(`已连接：${srcData.title ?? source.id} → ${suggestion.label}`);
+    },
+    [nodes, commitConnection, showToast],
+  );
+
+  const isValidConnection = useCallback(
+    (conn: Connection | Edge) => {
+      const source = nodes.find((n) => n.id === conn.source);
+      const target = nodes.find((n) => n.id === conn.target);
+      if (!source || !target || source.id === target.id) return false;
+      const handle = (conn as Connection).targetHandle;
+      // 界面节点只认左侧入口锚点：热点→热点的连线在交互流程图里没有语义
+      if (target.type === "screen") return handle === HOTSPOT_IN;
+      if (target.type === "decision" || target.type === "action") return !handle || handle === "in";
+      return false;
+    },
+    [nodes],
+  );
+
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+      if (connectionState.isValid) return;
+      const fromId = connectionState.fromNode?.id;
+      if (!fromId) {
+        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
+        return;
+      }
+      // 松手落在卡片主体（不在任何锚点上）时 React Flow 不产生 toNode，
+      // 这里按落点反查节点，视为「连到该卡片的入口锚点」，对齐 Figma 的连线手感。
+      const point =
+        "changedTouches" in event
+          ? event.changedTouches[0]
+          : event;
+      const hitId = point
+        ? document
+            .elementsFromPoint(point.clientX, point.clientY)
+            .find((el) => el.closest(".react-flow__node"))
+            ?.closest(".react-flow__node")
+            ?.getAttribute("data-id") ?? null
+        : null;
+      if (!hitId) {
+        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
+        return;
+      }
+      if (hitId === fromId) {
+        showToast("不能连到起点卡片自己");
+        return;
+      }
+      const target = nodes.find((n) => n.id === hitId);
+      if (!target) {
+        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
+        return;
+      }
+      const connection: Connection = {
+        source: fromId,
+        sourceHandle: connectionState.fromHandle?.id ?? null,
+        target: hitId,
+        targetHandle: target.type === "screen" ? HOTSPOT_IN : "in",
+      };
+      if (!isValidConnection(connection)) {
+        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
+        return;
+      }
+      commitConnection(connection);
+    },
+    [commitConnection, isValidConnection, nodes, showToast],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!isValidConnection(connection)) {
+        showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
+        return;
+      }
+      commitConnection(connection);
+    },
+    [commitConnection, isValidConnection, showToast],
   );
 
   /* ---------- 属性修改 ---------- */
@@ -1166,6 +1309,14 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
           setInspectorOpen(false);
           return;
         }
+        if (snapOpen) {
+          setSnapOpen(false);
+          return;
+        }
+        if (healthOpen) {
+          setHealthOpen(false);
+          return;
+        }
       }
       if (typing) return;
       if (e.key.toLowerCase() === "p") {
@@ -1193,7 +1344,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [exportJson, inspectorOpen, nodes, paletteOpen, redo, searchOpen, selNode, setNodes, snapshot, undo]);
+  }, [exportJson, healthOpen, inspectorOpen, nodes, paletteOpen, redo, searchOpen, selNode, setNodes, snapOpen, snapshot, undo]);
 
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selNode), [nodes, selNode]);
   const selectedEdge = useMemo(() => edges.find((e) => e.id === selEdge), [edges, selEdge]);
@@ -1663,6 +1814,17 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
 
             <button
               type="button"
+              className={`fc-icon-btn-inline fc-ai-toggle${aiOpen ? " is-active" : ""}`}
+              onClick={() => { setAiOpen((v) => !v); setHealthOpen(false); setSnapOpen(false); }}
+              title="AI 助手：描述流程自动生成画布 / 智能补线"
+              aria-label="AI 助手"
+              aria-pressed={aiOpen}
+            >
+              <Icon name="sparkle" size={15} />
+            </button>
+
+            <button
+              type="button"
               className="fc-icon-btn-inline fc-theme-toggle"
               onClick={() => setTheme((current) => nextTheme(current))}
               title={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}
@@ -1805,6 +1967,74 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
             )}
           </section>
         ) : null}
+
+        {aiOpen ? (() => {
+          const wireSuggestions = suggestWires(screenViewsForSuggestion(nodes), edges);
+          return (
+            <section className="fc-search-panel fc-ai-panel" aria-label="AI 助手">
+              <div className="fc-panel-head">
+                <b>AI 助手</b>
+                <span>描述流程，自动生成画布</span>
+              </div>
+              <textarea
+                className="fc-ai-input"
+                value={aiText}
+                onChange={(e) => setAiText(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") runAiPlan(aiText);
+                }}
+                placeholder="用「→」描述流程步骤，例如：&#10;首页 → 商品详情 → 是否已登录？→ 支付成功"
+                rows={3}
+              />
+              <div className="fc-ai-examples">
+                {AI_EXAMPLES.map((example, i) => (
+                  <button key={i} type="button" className="fc-chip-btn" onClick={() => { setAiText(example); runAiPlan(example); }}>
+                    示例 {i + 1}
+                  </button>
+                ))}
+              </div>
+              <div className="fc-ai-actions">
+                <button type="button" className="fc-btn fc-btn-primary" onClick={() => runAiPlan(aiText)}>
+                  <Icon name="sparkle" size={13} /> 生成预览
+                </button>
+                {aiPlan ? (
+                  <button type="button" className="fc-btn fc-btn-secondary" onClick={() => insertAiPack(aiPlan)}>
+                    插入到画布（{aiPlan.metrics.screens} 界面 / {aiPlan.metrics.edgeCount} 连线）
+                  </button>
+                ) : null}
+              </div>
+              {aiPlan ? (
+                aiPlan.problems.length ? (
+                  <p className="fc-ai-warn">{aiPlan.problems[0]}</p>
+                ) : (
+                  <div className="fc-ai-preview">
+                    <p className="fc-ai-scenario">识别为「{aiPlan.plan.scenario}」：</p>
+                    <ol className="fc-ai-steps">
+                      {aiPlan.plan.steps.map((step) => (
+                        <li key={step.key}>
+                          {step.kind === "decision" ? "🔀" : step.kind === "action" ? "⚙️" : "📱"} {step.title}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )
+              ) : null}
+              {wireSuggestions.length ? (
+                <div className="fc-ai-wires">
+                  <b>智能补线（{wireSuggestions.length}）</b>
+                  {wireSuggestions.map((s) => (
+                    <button key={`${s.source}->${s.target}`} type="button" onClick={() => acceptWireSuggestion(s)} title={s.reason}>
+                      <span>{s.reason}</span>
+                      <em>采纳</em>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="fc-health-ok">当前画布没有需要补线的死路界面。</p>
+              )}
+            </section>
+          );
+        })() : null}
 
         {snapOpen ? (
           <section className="fc-search-panel fc-snap-panel" aria-label="快照与版本对比">
@@ -1952,8 +2182,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
             <ReactFlow
               nodes={viewNodes}
               edges={displayEdges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
+              onNodesChange={wrappedOnNodesChange}
+              onEdgesChange={wrappedOnEdgesChange}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}
               nodeTypes={nodeTypes}
@@ -1961,9 +2191,13 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
               onlyRenderVisibleElements={cull && !renderAllForExport}
               defaultEdgeOptions={{ type: "flow", markerEnd }}
               connectionMode={ConnectionMode.Loose}
+              connectionLineComponent={BezierConnectionLine}
               proOptions={{ hideAttribution: true }}
               isValidConnection={isValidConnection}
               multiSelectionKeyCode={["Meta", "Control", "Shift"]}
+              /* 显式启用节点拖拽和连线：确保默认行为不被覆盖 */
+              nodesDraggable
+              nodesConnectable
               /* 画布手感对齐 Figma：空白处左键拖动=平移，Shift+拖动=框选，
                  滚轮=上下平移，Ctrl/⌘+滚轮=缩放，双击留给「新建界面」 */
               panOnDrag
