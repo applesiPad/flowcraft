@@ -289,6 +289,9 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   /** 「续写」锚定的卡片 id：插入时把生成流程放到这张卡旁边，而不是全局空白区 */
   const [aiAnchorNodeId, setAiAnchorNodeId] = useState<string | null>(null);
   const aiPanel = usePanelDrag(AI_PANEL_POS_KEY, aiOpen);
+  /** 画布常驻 AI 输入条（底部居中）：折叠胶囊 ⇄ 单行输入，Ctrl/⌘+K 唤起 */
+  const [aiBarOpen, setAiBarOpen] = useState(false);
+  const aiBarInputRef = useRef<HTMLInputElement | null>(null);
   /** 桌面常驻抽屉的拖拽（移动端抽屉是另一套 fixed 结构，不受影响） */
   const palettePanel = usePanelDrag(PALETTE_POS_KEY, true);
   const inspectorPanel = usePanelDrag(INSPECTOR_POS_KEY, true);
@@ -689,8 +692,17 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [showToast],
   );
 
+  /** 常驻输入条的 Enter：生成预览并清掉续写锚定残留（面板续写流可能设置过）。 */
+  const runAiBar = useCallback(
+    (text: string) => {
+      runAiPlan(text);
+      setAiAnchorNodeId(null);
+    },
+    [runAiPlan],
+  );
+
   const insertAiPack = useCallback(
-    (result: AiPlanResult) => {
+    (result: AiPlanResult, anchorNodeId?: string | null) => {
       if (result.problems.length) {
         showToast(`生成的流程有问题：${result.problems[0]}`);
         return;
@@ -706,7 +718,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         }));
       // 续写锚定：起点卡周围按 右→下→右下→左 找不撞卡的空位（160px 净空），
       // 全部被占时才回退 findBlankAnchor 全局空白区。
-      const anchorNode = aiAnchorNodeId ? nodes.find((n) => n.id === aiAnchorNodeId) : null;
+      const anchorNode = (anchorNodeId ?? aiAnchorNodeId) ? nodes.find((n) => n.id === (anchorNodeId ?? aiAnchorNodeId)) : null;
       let anchor: { x: number; y: number } | null = null;
       if (anchorNode) {
         const aw = typeof anchorNode.style?.width === "number" ? anchorNode.style.width : anchorNode.measured?.width ?? PACK_NODE_SIZE.screen.w;
@@ -737,10 +749,28 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         });
       }
       insertPack(result.pack, { x: anchor.x - bounds.minX, y: anchor.y - bounds.minY });
-      setAiAnchorNodeId(null);
+      // 只有这次插入真的用到了续写锚定时才清；显式传参的一次性锚点不动共享状态
+      if (!anchorNodeId) setAiAnchorNodeId(null);
     },
     [nodes, aiAnchorNodeId, insertPack, showToast],
   );
+
+  /** 常驻输入条：Enter 生成预览；插入时若正选中界面/判断卡则锚定到它旁边。 */
+  const insertFromAiBar = useCallback(() => {
+    if (!aiPlan) return;
+    const selected = selNode ? nodes.find((n) => n.id === selNode) : null;
+    const anchor = selected && (selected.type === "screen" || selected.type === "decision") ? selected.id : null;
+    insertAiPack(aiPlan, anchor);
+    setAiBarOpen(false);
+    aiBarInputRef.current?.blur();
+  }, [aiPlan, selNode, nodes, insertAiPack]);
+
+  const expandAiPanelFromBar = useCallback(() => {
+    setAiOpen(true);
+    setHealthOpen(false);
+    setSnapOpen(false);
+    setAiBarOpen(false);
+  }, []);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -1459,7 +1489,19 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         setSearchOpen(true);
         return;
       }
+      // Ctrl/⌘+K：唤起画布常驻 AI 输入条（在输入框里也生效，方便从别处跳过来）
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setAiOpen(false);
+        setAiBarOpen(true);
+        requestAnimationFrame(() => aiBarInputRef.current?.focus());
+        return;
+      }
       if (e.key === "Escape") {
+        if (aiBarOpen) {
+          setAiBarOpen(false);
+          return;
+        }
         if (searchOpen) {
           setSearchOpen(false);
           setSearchQuery("");
@@ -1508,7 +1550,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [exportJson, healthOpen, inspectorOpen, nodes, paletteOpen, redo, searchOpen, selNode, setNodes, snapOpen, snapshot, undo]);
+  }, [aiBarOpen, exportJson, healthOpen, inspectorOpen, nodes, paletteOpen, redo, searchOpen, selNode, setNodes, snapOpen, snapshot, undo]);
 
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selNode), [nodes, selNode]);
   const selectedEdge = useMemo(() => edges.find((e) => e.id === selEdge), [edges, selEdge]);
@@ -2545,6 +2587,60 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
             <div className="fc-hint">
               <Icon name="compass" size={13} /> 拖动平移 · Ctrl/⌘ 滚轮缩放 · Shift 框选 · P 预览
             </div>
+
+            {/* 常驻 AI 输入条：bench 性能测量下隐藏 */}
+            {!bench ? (
+              aiBarOpen ? (
+                <div className="fc-ai-bar">
+                  {aiPlan && !aiOpen ? (
+                    aiPlan.problems.length ? (
+                      <div className="fc-ai-bar-result is-warn">{aiPlan.problems[0]}</div>
+                    ) : (
+                      <div className="fc-ai-bar-result">
+                        <span className="fc-ai-bar-result-text">
+                          识别为「{aiPlan.plan.scenario}」 · {aiPlan.metrics.screens} 界面 / {aiPlan.metrics.edgeCount} 连线
+                        </span>
+                        <button type="button" className="fc-btn fc-btn-primary fc-ai-bar-insert" onClick={insertFromAiBar}>
+                          <Icon name="sparkle" size={12} /> 插入{selNode && (() => { const sn = nodes.find((n) => n.id === selNode); const sd = sn?.data as unknown as ScreenData | undefined; return sn && (sn.type === "screen" || sn.type === "decision") && sd?.title ? `到「${sd.title}」旁` : ""; })()}
+                        </button>
+                        <button type="button" className="fc-chip-btn" onClick={expandAiPanelFromBar} title="在 AI 面板中查看步骤详情与补线建议">
+                          展开面板
+                        </button>
+                      </div>
+                    )
+                  ) : null}
+                  <div className="fc-ai-bar-inputrow">
+                    <span className="fc-ai-bar-spark" aria-hidden="true"><Icon name="sparkle" size={12} /></span>
+                    <input
+                      ref={aiBarInputRef}
+                      className="fc-ai-bar-input"
+                      value={aiText}
+                      onChange={(e) => setAiText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          runAiBar(aiText);
+                        } else if (e.key === "Escape") {
+                          setAiBarOpen(false);
+                        }
+                      }}
+                      placeholder="用「→」描述流程，Enter 生成：首页 → 登录 → 支付成功"
+                      aria-label="AI 流程输入"
+                    />
+                    <button type="button" className="fc-chip-btn" onClick={() => setAiBarOpen(false)} title="收起（Esc）">
+                      <Icon name="x" size={12} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" className="fc-ai-bar fc-ai-bar-collapsed" onClick={() => { setAiBarOpen(true); requestAnimationFrame(() => aiBarInputRef.current?.focus()); }} title="AI 帮我画流程（Ctrl/⌘+K）">
+                  <span className="fc-ai-bar-spark" aria-hidden="true"><Icon name="sparkle" size={12} /></span>
+                  AI 帮我画流程
+                  <kbd>Ctrl K</kbd>
+                </button>
+              )
+            ) : null}
+
             {restored ? <div className="fc-restored">已恢复上次编辑的流程</div> : null}
           </div>
 
