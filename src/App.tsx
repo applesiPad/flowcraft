@@ -75,7 +75,7 @@ import {
   trimFlowHistory,
   type FlowHistoryEntry,
 } from "./flow/history";
-import { HOTSPOT_IN } from "./flow/types";
+import { HOTSPOT_IN, type DecisionData } from "./flow/types";
 import { benchDomCounts, buildBenchFlow, measureFps, parseBenchLevel, type BenchLevel } from "./flow/benchGraph";
 import type { ElementBox, ScreenData, ScreenElement, ScreenTemplate } from "./flow/types";
 import {
@@ -194,6 +194,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiPlan, setAiPlan] = useState<AiPlanResult | null>(null);
+  /** 「续写」锚定的卡片 id：插入时把生成流程放到这张卡旁边，而不是全局空白区 */
+  const [aiAnchorNodeId, setAiAnchorNodeId] = useState<string | null>(null);
   /** AI 面板拖放位置（fixed 视口坐标，左上角）。null = 未拖过，跟随默认右上位 */
   const [aiPanelPos, setAiPanelPos] = useState<{ x: number; y: number } | null>(() => {
     try {
@@ -649,6 +651,26 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [nodes],
   );
 
+  /** 「以此为起点续写」：选中卡标题作为种子填入输入框并聚焦，插入时锚定到这张卡旁边。 */
+  const aiTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const seedAiContinue = useCallback(
+    (title: string, nodeId: string) => {
+      setAiText(`${title} → `);
+      setAiAnchorNodeId(nodeId);
+      setAiPlan(null);
+      setAiOpen(true);
+      showToast(`已把「${title}」作为流程起点：接着输入后面的步骤，Ctrl+Enter 生成`);
+      // 等受控值渲染进 textarea 再聚焦，光标落在「→ 」之后
+      requestAnimationFrame(() => {
+        const el = aiTextareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+    },
+    [showToast],
+  );
+
   const runAiPlan = useCallback(
     (text: string) => {
       const trimmed = text.trim();
@@ -673,23 +695,51 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         showToast(`生成的流程有问题：${result.problems[0]}`);
         return;
       }
-      // 锚点不能落在现有卡片上：物理重叠会让「线不穿卡」不变式几何无解。
-      // 按现有节点包围盒自动找空白带（右侧优先，放不下放下方）。
       const bounds = packBounds(result.pack);
-      const anchor = findBlankAnchor(
-        nodes
-          .filter((n) => n.type !== "note")
-          .map((n) => ({
-            x: n.position.x,
-            y: n.position.y,
-            width: typeof n.style?.width === "number" ? n.style.width : n.measured?.width ?? PACK_NODE_SIZE.screen.w,
-            height: n.measured?.height ?? PACK_NODE_SIZE.screen.h,
-          })),
-        { width: bounds.maxX - bounds.minX, height: bounds.maxY - bounds.minY },
-      );
+      const obstacles = nodes
+        .filter((n) => n.type !== "note")
+        .map((n) => ({
+          x: n.position.x,
+          y: n.position.y,
+          width: typeof n.style?.width === "number" ? n.style.width : n.measured?.width ?? PACK_NODE_SIZE.screen.w,
+          height: n.measured?.height ?? PACK_NODE_SIZE.screen.h,
+        }));
+      // 续写锚定：起点卡周围按 右→下→右下→左 找不撞卡的空位（160px 净空），
+      // 全部被占时才回退 findBlankAnchor 全局空白区。
+      const anchorNode = aiAnchorNodeId ? nodes.find((n) => n.id === aiAnchorNodeId) : null;
+      let anchor: { x: number; y: number } | null = null;
+      if (anchorNode) {
+        const aw = typeof anchorNode.style?.width === "number" ? anchorNode.style.width : anchorNode.measured?.width ?? PACK_NODE_SIZE.screen.w;
+        const ah = anchorNode.measured?.height ?? PACK_NODE_SIZE.screen.h;
+        const packW = bounds.maxX - bounds.minX;
+        const packH = bounds.maxY - bounds.minY;
+        const GAP = 160;
+        const candidates = [
+          { x: anchorNode.position.x + aw + GAP, y: anchorNode.position.y },
+          { x: anchorNode.position.x, y: anchorNode.position.y + ah + GAP },
+          { x: anchorNode.position.x + aw + GAP, y: anchorNode.position.y + ah + GAP },
+          { x: anchorNode.position.x - packW - GAP, y: anchorNode.position.y },
+        ];
+        anchor =
+          candidates.find(
+            (c) =>
+              !obstacles.some(
+                (o) => c.x < o.x + o.width && c.x + packW > o.x && c.y < o.y + o.height && c.y + packH > o.y,
+              ),
+          ) ?? null;
+      }
+      if (!anchor) {
+        // 锚点不能落在现有卡片上：物理重叠会让「线不穿卡」不变式几何无解。
+        // 按现有节点包围盒自动找空白带（右侧优先，放不下放下方）。
+        anchor = findBlankAnchor(obstacles, {
+          width: bounds.maxX - bounds.minX,
+          height: bounds.maxY - bounds.minY,
+        });
+      }
       insertPack(result.pack, { x: anchor.x - bounds.minX, y: anchor.y - bounds.minY });
+      setAiAnchorNodeId(null);
     },
-    [nodes, insertPack, showToast],
+    [nodes, aiAnchorNodeId, insertPack, showToast],
   );
 
   const onDrop = useCallback(
@@ -1463,18 +1513,45 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selNode), [nodes, selNode]);
   const selectedEdge = useMemo(() => edges.find((e) => e.id === selEdge), [edges, selEdge]);
 
-  /** 选中界面的上下文：AI 面板顶部显示它的出口状态与快捷建议。 */
+  /** 选中节点的上下文：AI 面板顶部显示它的连线状态与快捷建议（screen/decision/action）。 */
   const selectedScreenContext = useMemo(() => {
     const node = selectedNode;
-    if (!node || node.type !== "screen") return null;
-    const data = node.data as unknown as ScreenData;
+    if (!node || node.type === "note") return null;
+    const data = node.data as unknown as ScreenData & DecisionData;
     const title = typeof data?.title === "string" ? data.title : node.id;
     const outEdges = edges.filter((e) => e.source === node.id);
     const inEdges = edges.filter((e) => e.target === node.id);
+
+    // decision：体检同一套判定——缺「是」或「否」出口即分支不全（复用 flowHealth 语义）
+    if (node.type === "decision") {
+      const hasYes = outEdges.some((e) => e.sourceHandle === "yes");
+      const hasNo = outEdges.some((e) => e.sourceHandle === "no");
+      const missing = [!hasYes ? data.yes ?? "是" : null, !hasNo ? data.no ?? "否" : null].filter(Boolean).join("、");
+      return {
+        id: node.id,
+        title,
+        kind: "decision" as const,
+        inCount: inEdges.length,
+        outCount: outEdges.length,
+        deadEnd: outEdges.length === 0,
+        branchMissing: missing || null,
+        suggestion: null,
+      };
+    }
+
     const deadEnd = outEdges.length === 0;
     // 这张卡的死路补线建议（若有），点「采纳」即可接上
-    const suggestion = deadEnd ? wireSuggestions.find((s) => s.source === node.id) ?? null : null;
-    return { id: node.id, title, outCount: outEdges.length, inCount: inEdges.length, deadEnd, suggestion };
+    const suggestion = deadEnd && node.type === "screen" ? wireSuggestions.find((s) => s.source === node.id) ?? null : null;
+    return {
+      id: node.id,
+      title,
+      kind: node.type === "screen" ? ("screen" as const) : ("action" as const),
+      inCount: inEdges.length,
+      outCount: outEdges.length,
+      deadEnd,
+      branchMissing: null,
+      suggestion,
+    };
   }, [selectedNode, edges, wireSuggestions]);
 
   const searchResults = useMemo(() => {
@@ -2117,16 +2194,18 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                 <span className="fc-ai-head-hint" aria-hidden="true"><Icon name="grip" size={12} /> 拖动移动</span>
               </div>
               {selectedScreenContext ? (
-                <div className={`fc-ai-context${selectedScreenContext.deadEnd ? " is-dead" : ""}`}>
+                <div className={`fc-ai-context${selectedScreenContext.branchMissing ? " is-dead" : selectedScreenContext.deadEnd ? " is-dead" : ""}`}>
                   <div className="fc-ai-context-row">
                     <span className="fc-ai-context-title" title={selectedScreenContext.title}>
-                      {selectedScreenContext.deadEnd ? "🚧" : "✅"} {selectedScreenContext.title}
+                      {selectedScreenContext.branchMissing ? "🔀" : selectedScreenContext.deadEnd ? "🚧" : "✅"} {selectedScreenContext.title}
                     </span>
                     <span className="fc-ai-context-meta">
                       入 {selectedScreenContext.inCount} · 出 {selectedScreenContext.outCount}
                     </span>
                   </div>
-                  {selectedScreenContext.deadEnd && selectedScreenContext.suggestion ? (
+                  {selectedScreenContext.branchMissing ? (
+                    <span className="fc-ai-context-note">判断分支不全：缺「{selectedScreenContext.branchMissing}」出口；原型走查会按默认「是」处理</span>
+                  ) : selectedScreenContext.deadEnd && selectedScreenContext.suggestion ? (
                     <button
                       type="button"
                       className="fc-ai-context-fix"
@@ -2136,13 +2215,24 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                       建议接到「{wireTargetTitle(selectedScreenContext.suggestion.target)}」 <em>一键接线</em>
                     </button>
                   ) : selectedScreenContext.deadEnd ? (
-                    <span className="fc-ai-context-note">这是死路界面：还没有任何出口连线</span>
+                    <span className="fc-ai-context-note">{selectedScreenContext.kind === "screen" ? "这是死路界面：还没有任何出口连线" : "还没有任何出口连线"}</span>
                   ) : (
-                    <span className="fc-ai-context-note">选中即看出口状态；死路界面会在这里给出补线建议</span>
+                    <span className="fc-ai-context-note">选中即看连线状态；死路 / 分支不全时在这里给出建议</span>
                   )}
+                  {selectedScreenContext.kind !== "action" ? (
+                    <button
+                      type="button"
+                      className="fc-ai-context-fix fc-ai-context-continue"
+                      onClick={() => seedAiContinue(selectedScreenContext.title, selectedScreenContext.id)}
+                      title="AI 以这张卡为起点续写后续流程，插入时自动锚定在它旁边"
+                    >
+                      以此为起点，续写后续流程 <em>AI 续写</em>
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
               <textarea
+                ref={aiTextareaRef}
                 className="fc-ai-input"
                 value={aiText}
                 onChange={(e) => setAiText(e.target.value)}

@@ -1629,6 +1629,11 @@ button {
   background: linear-gradient(135deg, var(--fc-accent), var(--fc-accent-2));
 }
 
+/* 「以此为起点续写」：与死路修复按钮同构但带上下间距，视觉上是第二动作 */
+.fc-ai-context-continue {
+  margin-top: 2px;
+}
+
 .fc-ai-badge {
   display: inline-flex;
   align-items: center;
