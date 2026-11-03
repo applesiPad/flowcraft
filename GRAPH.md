@@ -29,11 +29,11 @@ flowcraft/
 │     ├─ Preview.tsx         全屏原型预览播放器（输入/校验/分支/动效）
 │     ├─ ScreenView.tsx      画布内高保真界面渲染与走查交互
 │     ├─ annotations.ts      批注数据模型、校验、增删改、解析与统计
+│     ├─ aiFlow.ts           AI 助手 MVP：文本 → 流程规划 → ScreenPack + 空白锚点 + 补线建议
 │     ├─ benchGraph.ts       性能基线合成大图（?bench=…）+ 页内指标
 │     ├─ canvasStore.ts      多画布存储：列表/活动 id/数据键、legacy 迁移
 │     ├─ edgeLabel.ts        边标签尺寸、lane 依据与对端分组
-│     ├─ edgeRouting.ts      正交 A* 避障 + 回边平衡（纯几何）
-│     ├─ edgeRoutingCache.ts 有界 LRU 边路由缓存（2048）
+│     ├─ edgeRouting.ts      贝塞尔曲线 + 通用路由（候选生成 + 线不穿卡不变式）
 │     ├─ edgeStoreSelectors.ts边共享派生状态（WeakMap 一次派生）
 │     ├─ edges.tsx           自定义 FlowEdge：标签、回边、手动通道
 │     ├─ elementEditor.ts    元素拖拽/缩放/吸附/容器钳制
@@ -59,7 +59,7 @@ flowcraft/
 │     ├─ templateThumbnails.ts模板/模板包 SVG 缩略图（纯函数）
 │     ├─ theme.ts            深浅主题与边框颜色
 │     ├─ types.ts            核心数据结构（含条件/校验/备注锚点）
-├─ tests/                      19 个 Node 测试文件（与 src/flow 模块一一对应 + 几何/导出布局专项）
+├─ tests/                      23 个 Node 测试文件（与 src/flow 模块一一对应 + 几何/导出布局专项）
 ├─ docs/                       截图、性能基线、协作方案设计与进度记录
 ├─ public/                     favicon 与图标资源
 └─ vite.config.ts / tsconfig*.json / package.json
@@ -76,9 +76,8 @@ graph TD
     STORE[(React Flow store)] -->|WeakMap 一次派生| DERIVED[edgeStoreSelectors.ts]
     DERIVED -->|zoom / lane 分组 / 节点几何 / 可视区| EDGES
     NODES -->|热点 Handle| CANVAS[React Flow 画布]
-    EDGES -->|路由输入| CACHE[edgeRoutingCache.ts]
-    CACHE -->|未命中| ROUTE[edgeRouting.ts]
-    ROUTE -->|正交绕行点列| CACHE
+    EDGES -->|几何输入| ROUTE[edgeRouting.ts]
+    ROUTE -->|候选路线 + 不变式过滤| PATH[多段贝塞尔 path]
     CACHE -->|缓存命中/未命中结果| EDGES
     EDGES -->|SVG Path + 标签| CANVAS
     APP -->|备注锚点/旧存档| NOTELAYOUT[noteLayout.ts]
@@ -116,14 +115,15 @@ graph TD
 | 你要找什么 | 文件 | 关键符号 |
 | --- | --- | --- |
 | 边组件 | `src/flow/edges.tsx` | `FlowEdge`、`roundedPath`、`pointOnPolyline` |
-| 几何碰撞 | `src/flow/edgeRouting.ts` | `getNodeBox`、`lineIntersectsBox`、`detectCollisions` |
+| 连线路由 | `src/flow/edgeRouting.ts` | `computeEdgeEndpoints`（候选生成 + 不变式过滤）、`getBezierPath` |
 | 正交避障 | `src/flow/edgeRouting.ts` | `smartEdgeRoute`、`routeAroundNodes` |
 | 自动回边平衡 | `src/flow/edgeRouting.ts` | `createBalancedBackEdgePath` |
 | 手动回边通道 | `src/flow/edgeRouting.ts` | `createBackEdgeLanePath`、`normalizeEdgeRouteMode` |
 | 连线二次编辑 | `src/flow/Inspector.tsx` / `App.tsx` | 出发热点、`routeMode`、`patchEdge` |
-| 路由缓存 | `src/flow/edgeRoutingCache.ts` | `createEdgeRouteCache`、`routeWithCache`、`defaultEdgeRouteCache` |
+| 路由缓存 | 已移除（v2 通用路由不再需要，见 2026-11-03 重构记录） |
 | 边共享派生状态 | `src/flow/edgeStoreSelectors.ts` | `deriveEdgeFlowState`、`selectDerivedEdgeFlowState`、`laneGroupForEdge`、`laneIndexOfEdge` |
-| 回归测试 | `tests/edgeRouting.test.ts`、`tests/edgeRoutingCache.test.ts`、`tests/edgeStoreSelectors.test.ts` | 单障碍、多障碍、缓存失效、LRU 淘汰、lane 分组与逐边旧语义等价、派生缓存命中 |
+| 回归测试 | `tests/edgeRouting.test.ts`、`tests/edgeStoreSelectors.test.ts` | 单障碍、多障碍、分支语义圆点、随机场景性质测试（线不穿卡）、lane 分组、派生缓存命中 |
+| AI 助手测试 | `tests/aiFlow.test.ts` | 文本切分、模板/场景词典、decision 回边、ScreenPack 校验与实例化、布局不重叠、空白锚点、补线建议 |
 
 实现要点：
 
@@ -195,6 +195,7 @@ graph TD
 | 包实例化 | `src/flow/templatePacks.ts` / `buildPackGraph`（一次快照整体插入、可撤销） |
 | 调色板展示 | `src/flow/Palette.tsx` / 包卡片、缩略图、点击居中插入、拖入画布 |
 | 插入接线 | `src/App.tsx` / `insertPack`、`addAtCenter`、`onDrop` |
+| AI 助手（MVP） | `src/flow/aiFlow.ts` / `planFlowFromText`（文本→步骤链）、`buildAiPack`（→ScreenPack）、`findBlankAnchor`（空白插入锚点）、`suggestWires`（死路补线建议）；`src/App.tsx` / `.fc-ai-panel` + `insertAiPack`、`acceptWireSuggestion` |
 
 ### 导出
 
