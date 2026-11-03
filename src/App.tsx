@@ -1812,27 +1812,30 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
               </div>
             ) : null}
 
-            <button
-              type="button"
-              className={`fc-icon-btn-inline fc-ai-toggle${aiOpen ? " is-active" : ""}`}
-              onClick={() => { setAiOpen((v) => !v); setHealthOpen(false); setSnapOpen(false); }}
-              title="AI 助手：描述流程自动生成画布 / 智能补线"
-              aria-label="AI 助手"
-              aria-pressed={aiOpen}
-            >
-              <Icon name="sparkle" size={15} />
-            </button>
+            <span className="fc-toolbar-divider" role="presentation" />
 
-            <button
-              type="button"
-              className="fc-icon-btn-inline fc-theme-toggle"
-              onClick={() => setTheme((current) => nextTheme(current))}
-              title={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}
-              aria-label={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}
-              aria-pressed={theme === "dark"}
-            >
-              <Icon name={theme === "light" ? "moon" : "sun"} size={15} />
-            </button>
+            <div className="fc-toolbar-group fc-toolbar-group-ai" aria-label="AI 与视图">
+              <button
+                type="button"
+                className={`fc-icon-btn-inline fc-ai-toggle${aiOpen ? " is-active" : ""}`}
+                onClick={() => { setAiOpen((v) => !v); setHealthOpen(false); setSnapOpen(false); }}
+                title="AI 助手：描述流程自动生成画布 / 智能补线"
+                aria-label="AI 助手"
+                aria-pressed={aiOpen}
+              >
+                <Icon name="sparkle" size={15} />
+              </button>
+              <button
+                type="button"
+                className="fc-icon-btn-inline fc-theme-toggle"
+                onClick={() => setTheme((current) => nextTheme(current))}
+                title={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}
+                aria-label={theme === "light" ? "切换到深色主题" : "切换到浅色主题"}
+                aria-pressed={theme === "dark"}
+              >
+                <Icon name={theme === "light" ? "moon" : "sun"} size={15} />
+              </button>
+            </div>
 
             <span className="fc-toolbar-spacer" />
 
@@ -1972,8 +1975,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
           const wireSuggestions = suggestWires(screenViewsForSuggestion(nodes), edges);
           return (
             <section className="fc-search-panel fc-ai-panel" aria-label="AI 助手">
-              <div className="fc-panel-head">
-                <b>AI 助手</b>
+              <div className="fc-panel-head fc-ai-head">
+                <b><span className="fc-ai-badge" aria-hidden="true"><Icon name="sparkle" size={11} /></span>AI 助手</b>
                 <span>描述流程，自动生成画布</span>
               </div>
               <textarea
