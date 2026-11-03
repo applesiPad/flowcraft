@@ -62,7 +62,7 @@ import {
   type FlowDiff,
   type FlowSnapshot,
 } from "./flow/snapshotStore";
-import { HEALTH_KIND_LABEL, scanFlowHealth, type HealthIssue } from "./flow/flowHealth";
+import { computeDeadHints, HEALTH_KIND_LABEL, scanFlowHealth, type HealthIssue } from "./flow/flowHealth";
 import { AI_EXAMPLES, buildAiPack, findBlankAnchor, planFlowFromText, screenViewsForSuggestion, suggestWires, type AiPlanResult, type WireSuggestion } from "./flow/aiFlow";
 import { parseFlowFile, summarizeImport, type ImportResult } from "./flow/schemaMigrate";
 import { buildReportHtml } from "./flow/exportReport";
@@ -1965,9 +1965,14 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     });
     return unlinked;
   }, [edges, nodes, preview, showHotspots, walkMode]);
+  // §8-1 死路提示：编辑期常开（不受 showHotspots 门控），走查/预览下不渲染
+  const deadHints = useMemo(
+    () => (walkMode || preview ? undefined : computeDeadHints(canonicalNodes, edges)),
+    [canonicalNodes, edges, walkMode, preview],
+  );
   const editorCtx = useMemo(
-    () => ({ showHotspots, walkMode, zoom, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys }),
-    [showHotspots, walkMode, zoom, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys],
+    () => ({ showHotspots, walkMode, zoom, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints }),
+    [showHotspots, walkMode, zoom, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints],
   );
   const viewNodes = useMemo(
     () => canonicalNodes.map((n) => (n.id === flashNode ? { ...n, className: "fc-flash" } : n)),

@@ -61,6 +61,31 @@ function titleOf(node: Node): string {
   return String((node.data as { title?: unknown })?.title ?? node.id);
 }
 
+/**
+ * 画布级死路提示（§8-1）：每个界面节点的「出口健康」摘要，供节点渲染橙描边 + 角标。
+ * - unwiredPrimary：主按钮（tone=primary）没有出口连线的数量（与 scanFlowHealth 同语义）；
+ * - hasOut：该节点是否至少有一条出口连线（自环算出口）。
+ * 判断节点不在此列——分支缺失由选中上下文条与体检报告负责，避免画布告警噪音。
+ * 纯函数、无 DOM 依赖，Node 测试可直接 import。
+ */
+export type DeadHint = { unwiredPrimary: number; hasOut: boolean };
+
+export function computeDeadHints(nodes: Node[], edges: Edge[]): Map<string, DeadHint> {
+  const outSources = new Set(edges.map((e) => e.source));
+  const hints = new Map<string, DeadHint>();
+  for (const node of nodes) {
+    if (node.type !== "screen") continue;
+    const data = node.data as unknown as ScreenData;
+    const unwiredPrimary = (data.elements ?? []).filter(
+      (el) => el.kind === "button" && el.tone === "primary" &&
+        !edges.some((e) => e.source === node.id && e.sourceHandle === el.id),
+    ).length;
+    const hasOut = outSources.has(node.id);
+    hints.set(node.id, { unwiredPrimary, hasOut });
+  }
+  return hints;
+}
+
 export function scanFlowHealth(nodes: Node[], edges: Edge[]): HealthIssue[] {
   const screens = nodes.filter((n) => n.type === "screen");
   const decisions = nodes.filter((n) => n.type === "decision");

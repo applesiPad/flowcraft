@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge, Node } from "@xyflow/react";
-import { HEALTH_KIND_LABEL, scanFlowHealth } from "../src/flow/flowHealth.ts";
+import { computeDeadHints, HEALTH_KIND_LABEL, scanFlowHealth } from "../src/flow/flowHealth.ts";
 
 const screenNode = (id: string, title: string, elements: Record<string, unknown>[] = []): Node => ({
   id,
@@ -141,4 +141,37 @@ test("健康检查二期：空标题界面 → unnamedScreen", () => {
   assert.equal(unnamed[0].nodeId, "b");
   // a 无入无出 → 孤立（命名正常不报）
   assert.equal(issues.filter((i) => i.kind === "orphan").length, 2);
+});
+
+/* ---------- computeDeadHints：画布级死路角标数据源 ---------- */
+
+test("死路角标：主按钮未接线计数，ghost 按钮不计数", () => {
+  const nodes = [
+    screenNode("a", "登录", [
+      { id: "go", kind: "button", tone: "primary", label: "登录" },
+      { id: "guest", kind: "button", tone: "ghost", label: "游客浏览" },
+      { id: "pay", kind: "button", tone: "primary", label: "去支付" },
+    ]),
+  ];
+  // 只接了 go 和 ghost，pay 悬空
+  const edges = [flowEdge("e1", "a", "go", "b"), flowEdge("e2", "a", "guest", "b")];
+  const hints = computeDeadHints(nodes, edges);
+  assert.equal(hints.get("a")?.unwiredPrimary, 1);
+  assert.equal(hints.get("a")?.hasOut, true);
+});
+
+test("死路角标：无出口界面 hasOut=false，自环算出口", () => {
+  const nodes = [
+    screenNode("a", "排队页", []),
+    screenNode("b", "自环", [{ id: "refresh", kind: "button", tone: "primary" }]),
+  ];
+  const hints = computeDeadHints(nodes, [flowEdge("e1", "b", "refresh", "b")]);
+  assert.equal(hints.get("a")?.hasOut, false);
+  assert.equal(hints.get("b")?.hasOut, true);
+});
+
+test("死路角标：判断/动作节点不出现在结果里", () => {
+  const nodes = [decisionNode("d", "会员？")];
+  const hints = computeDeadHints(nodes, []);
+  assert.equal(hints.size, 0);
 });

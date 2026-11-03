@@ -4644,3 +4644,41 @@ body,
     transform: translateX(-50%);
   }
 }
+
+/* ============================================================
+   §8-3 判断药丸点击起线 + §8-1 死路画布角标（2026-11-04）
+   ============================================================ */
+.fc-handle-label.is-clickable {
+  pointer-events: auto;
+  cursor: crosshair;
+  transition: border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.fc-handle-label.is-clickable:hover {
+  border-color: color-mix(in oklab, var(--fc-warning) 70%, transparent);
+  color: var(--fc-warning);
+  transform: scale(1.08);
+}
+
+/* 死路提示：主按钮未接线 / 无出口的界面——编辑期常开，选中态让位给现有描边 */
+.fc-node-screen.is-dead-hint:not(.is-selected) {
+  outline: 2px solid color-mix(in oklab, var(--fc-warning) 62%, transparent);
+  outline-offset: 2px;
+}
+
+.fc-dead-badge {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  z-index: 5;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: #1c1917;
+  background: var(--fc-warning);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px color-mix(in oklab, var(--fc-warning) 35%, transparent);
+  pointer-events: none;
+  white-space: nowrap;
+}

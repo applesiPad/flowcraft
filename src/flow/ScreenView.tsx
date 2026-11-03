@@ -12,6 +12,7 @@ import {
   type ContainerRegion,
   type ResizeHandlePos,
 } from "./elementEditor";
+import type { DeadHint } from "./flowHealth.ts";
 import type { ElementBox, ScreenData, ScreenElement } from "./types";
 
 const RESIZE_HANDLES: { pos: ResizeHandlePos; cls: string; cursor: string }[] = [
@@ -37,6 +38,8 @@ export type EditorCtx = {
   walkHotspot?: (nodeId: string, elId: string) => void;
   /** 编辑期未配置跳转的热点，key 为 nodeId:elId */
   unlinkedHotspotKeys?: ReadonlySet<string>;
+  /** 画布级死路提示（§8-1）：nodeId → 出口健康摘要，驱动橙描边与角标 */
+  deadHints?: ReadonlyMap<string, DeadHint>;
 };
 
 export const EditorContext = createContext<EditorCtx>({ showHotspots: true, walkMode: false, zoom: 1 });
