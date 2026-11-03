@@ -209,6 +209,7 @@ export function Preview({ nodes, edges, startId, onExit }: Props) {
           <div key={animKey} className={`fc-preview-device fc-anim-${animDir}`}>
             <ScreenView
               data={display}
+              nodeId={currentId}
               preview
               onClickHotspot={(el) => onHotspot(el.id)}
               hotspotLabels={Object.fromEntries(

@@ -11,8 +11,8 @@ function fakeBrowserReport() {
   const snap = collectQaSnapshot({ nodes: initialNodes, edges: initialEdges });
   return {
     ...snap,
-    dom: { nodes: 12, edges: 14, handles: 96 },
-    edgeGeometry: { pathCount: 14, totalLength: 11832.71, pathHash: 4112298526 },
+    dom: { nodes: 13, edges: 17, handles: 50 },
+    edgeGeometry: { pathCount: 17, totalLength: 15230.48, pathHash: 4112298526 },
   };
 }
 

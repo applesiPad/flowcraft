@@ -1,11 +1,11 @@
 {
-  "name": "flowcraft 电商示例冒烟基线",
+  "name": "flowcraft 医院挂号示例冒烟基线",
   "url": "http://localhost:5177/?example=ecommerce&cull=0",
-  "nodes": 12,
-  "edges": 14,
-  "screens": 8,
+  "nodes": 13,
+  "edges": 17,
+  "screens": 9,
   "decisions": 2,
-  "hotspots": 31,
-  "inputVars": ["code", "phone"],
-  "issueKinds": ["unwiredPrimary", "deadEnd"]
+  "hotspots": 33,
+  "inputVars": ["patientName", "patientPhone", "idCard", "symptom"],
+  "issueKinds": ["deadEnd"]
 }
