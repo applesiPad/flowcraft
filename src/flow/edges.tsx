@@ -1,89 +1,69 @@
-import { memo } from "react";
-import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useStore, type EdgeProps } from "@xyflow/react";
-import { createBackEdgeLanePath, createBalancedBackEdgePath, normalizeEdgeRouteMode, bezierCurvePath } from './edgeRouting';
-import { routeWithCache } from './edgeRoutingCache';
+import { memo, useMemo, useState, useCallback, useSyncExternalStore } from "react";
+import { BaseEdge, EdgeLabelRenderer, useStore, type EdgeProps, type ConnectionLineComponentProps } from "@xyflow/react";
+import {
+  buildRouteChain,
+  computeEdgeEndpoints,
+  getBezierPath,
+  type Point,
+  type PortDirection,
+} from "./edgeRouting";
+import { handleColorOf } from "./edgeColors";
 import {
   laneGroupForEdge,
   laneIndexOfEdge,
   selectDerivedEdgeFlowState,
-} from './edgeStoreSelectors';
+} from "./edgeStoreSelectors";
 import {
-  edgeArrowPolygon,
-  chooseEdgeLabelAnchor,
-  edgeLabelAnchorStyle,
-  estimateEdgeLabelSize,
-  edgeLabelCardStyle,
-  placeEdgeLabelGroup,
+  createArrowMarker,
+  pointOnPolyline,
+  polylineLength,
   type EdgeLabelPoint,
-} from './edgeLabel';
+} from "./edgeLabel";
 
-type Pt = { x: number; y: number };
+// ── 箭头 marker ──────────────────────────────────────────────────────
 
-/** 把折线点列转成带圆角拐弯的 path（与 React Flow 内置 smoothstep 的观感一致） */
-function roundedPath(points: Pt[], radius: number) {
-  let d = `M${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length - 1; i++) {
-    const prev = points[i - 1];
-    const p = points[i];
-    const next = points[i + 1];
-    const v1 = { x: p.x - prev.x, y: p.y - prev.y };
-    const v2 = { x: next.x - p.x, y: next.y - p.y };
-    const l1 = Math.hypot(v1.x, v1.y) || 1;
-    const l2 = Math.hypot(v2.x, v2.y) || 1;
-    const r = Math.min(radius, l1 / 2, l2 / 2);
-    const a = { x: p.x - (v1.x / l1) * r, y: p.y - (v1.y / l1) * r };
-    const b = { x: p.x + (v2.x / l2) * r, y: p.y + (v2.y / l2) * r };
-    d += `L${a.x} ${a.y}Q${p.x} ${p.y} ${b.x} ${b.y}`;
-  }
-  const last = points[points.length - 1];
-  d += `L${last.x} ${last.y}`;
-  return d;
+/** 为每种颜色生成稳定的 marker id */
+function getArrowMarkerId(color: string): string {
+  return `arrow-${color.replace(/[^a-zA-Z0-9]/g, "")}`;
 }
 
-/** 把 smoothstep 路径上的关键点用同一套标签锚点规则定位 */
-function smoothStepLabelPoint(options: {
-  sourceX: number;
-  sourceY: number;
-  targetX: number;
-  targetY: number;
-  sourcePosition: EdgeProps["sourcePosition"];
-  targetPosition: EdgeProps["targetPosition"];
-  laneOffset?: number;
-}): EdgeLabelPoint {
-  const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, laneOffset = 0 } = options;
-  // React Flow 的 smoothstep 中心线：先离开 source，再沿目标方向进入 target。
-  // 这里用等价的正交关键点估算标签位置，避免额外依赖内部实现。
-  const offset = 18;
-  const sourceHorizontal = sourcePosition === "left" || sourcePosition === "right";
-  const targetHorizontal = targetPosition === "left" || targetPosition === "right";
-  const points: EdgeLabelPoint[] = [{ x: sourceX, y: sourceY }];
+// ── 工具函数 ──────────────────────────────────────────────────────────
 
-  if (sourceHorizontal) {
-    points.push({ x: sourceX + (sourcePosition === "right" ? offset : -offset), y: sourceY });
-  } else {
-    points.push({ x: sourceX, y: sourceY + (sourcePosition === "bottom" ? -offset : offset) });
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+type NodeRect = { x: number; y: number; width: number; height: number };
+
+/** 从 RF 内部节点提取流程坐标矩形；尺寸未测量完成时返回 null。 */
+function nodeRectOf(
+  node:
+    | {
+        internals?: { positionAbsolute?: { x?: number; y?: number } };
+        position?: { x: number; y: number };
+        measured?: { width?: number; height?: number };
+      }
+    | undefined,
+): NodeRect | null {
+  const x = node?.internals?.positionAbsolute?.x ?? node?.position?.x;
+  const y = node?.internals?.positionAbsolute?.y ?? node?.position?.y;
+  const width = node?.measured?.width;
+  const height = node?.measured?.height;
+  if (x === undefined || y === undefined || !width || !height) return null;
+  return { x, y, width, height };
+}
+
+/** 把 EdgeProps 的 targetPosition/sourcePosition 转成 PortDirection */
+function toPortDir(
+  pos: EdgeProps["targetPosition"] | EdgeProps["sourcePosition"] | "left" | "right" | "top" | "bottom",
+): PortDirection {
+  switch (pos) {
+    case "left":   return "left";
+    case "right":  return "right";
+    case "top":    return "top";
+    case "bottom": return "bottom";
+    default:       return "right";
   }
-
-  if (sourceHorizontal && targetHorizontal) {
-    const midX = (sourceX + targetX) / 2;
-    points.push({ x: midX, y: sourceY }, { x: midX, y: targetY });
-  } else if (!sourceHorizontal && !targetHorizontal) {
-    const midY = (sourceY + targetY) / 2;
-    points.push({ x: sourceX, y: midY }, { x: targetX, y: midY });
-  } else if (sourceHorizontal) {
-    points.push({ x: targetX, y: sourceY });
-  } else {
-    points.push({ x: sourceX, y: targetY });
-  }
-
-  if (targetHorizontal) {
-    points.push({ x: targetX + (targetPosition === "left" ? -offset : offset), y: targetY });
-  } else {
-    points.push({ x: targetX, y: targetY + (targetPosition === "top" ? -offset : offset) });
-  }
-  points.push({ x: targetX, y: targetY });
-
-  return chooseEdgeLabelAnchor(points, { target: { x: targetX, y: targetY }, laneOffset }).point;
 }
 
 /**
@@ -99,205 +79,263 @@ function placeLabelClearOfTarget(
   zoom: number,
 ): EdgeLabelPoint {
   const safeZoom = zoom > 0 ? zoom : 1;
-  // 卡片宽约 320，fit view 时屏幕宽度会缩小；标签不压卡片需要按屏幕坐标换算。
   const cardScreenHalf = (Math.max(200, targetWidth) * safeZoom) / 2;
   const gap = Math.max(14, cardScreenHalf * 0.08);
-  if (targetPosition === "left") return { x: Math.min(point.x, targetX - gap), y: point.y };
-  if (targetPosition === "right") return { x: Math.max(point.x, targetX + gap), y: point.y };
-  if (targetPosition === "top") return { x: point.x, y: Math.min(point.y, targetY - gap) };
+  if (targetPosition === "left")   return { x: Math.min(point.x, targetX - gap), y: point.y };
+  if (targetPosition === "right")  return { x: Math.max(point.x, targetX + gap), y: point.y };
+  if (targetPosition === "top")    return { x: point.x, y: Math.min(point.y, targetY - gap) };
   return { x: point.x, y: Math.max(point.y, targetY + gap) };
 }
 
+/**
+ * 在整条路线的采样折线上取标签锚点：
+ * 取路线后段（约 70%~85% 处），避开起点和终点区域。
+ * 多条同目标边按 lane 序号沿曲线后退，避免标签重叠。
+ */
+const toPosition = (dir: PortDirection): EdgeProps["targetPosition"] => dir as EdgeProps["targetPosition"];
+
+function labelPointOnSamples(
+  samples: readonly Point[],
+  laneIndex: number,
+  laneCount: number,
+): EdgeLabelPoint {
+  const mutable: EdgeLabelPoint[] = samples.map((p) => ({ x: p.x, y: p.y }));
+  const total = polylineLength(mutable);
+  if (total < 1 || mutable.length === 0) {
+    const last = mutable[mutable.length - 1];
+    return { x: last?.x ?? 0, y: last?.y ?? 0 };
+  }
+
+  // 标签放在路线的 70%~85% 区间，lane 偏移让同目标多线错开
+  const baseRatio = 0.78;
+  const laneStep = 0.06;
+  const offset = laneIndex - (laneCount - 1) / 2;
+  const ratio = clamp(baseRatio - offset * laneStep, 0.15, 0.92);
+
+  return pointOnPolyline(mutable, ratio);
+}
+
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+const reducedMotionSubscribe = (onChange: () => void) => {
+  const mq = window.matchMedia(reducedMotionQuery);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+};
+
+/** 系统开启「减少动态效果」时停用连线流动动画（SMIL 不受 CSS 动画禁用影响）。 */
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    reducedMotionSubscribe,
+    () => window.matchMedia(reducedMotionQuery).matches,
+    () => false,
+  );
+}
+
+// ── FlowEdge 组件 ─────────────────────────────────────────────────────
 
 export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, data } = props;
-  // 与"单条边"无关的量（zoom / 全部节点几何 / lane 分组 / 可视区）改为共享派生缓存：
-  // 同一帧内所有边命中同一份 DerivedEdgeFlowState，大图每帧只算一次而不是 E 次。
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    selected,
+    data,
+  } = props;
+
+  // ── zoom & lane info from derived store ───────────────────────────
   const derived = useStore(selectDerivedEdgeFlowState);
   const zoom = derived.zoom;
-  // fit view 在窄窗口下可能只有约 0.24；标签已反向缩放，不应直接消失。
+  const screenZoom = Math.max(zoom, 0.001);
   const showLabel = zoom >= 0.18;
-  // 回边路由需要节点真实高度，否则会横穿卡片
-  const srcNode = useStore((st) => (props.source ? st.nodeLookup.get(props.source) : undefined));
-  const tgtNode = useStore((st) => (props.target ? st.nodeLookup.get(props.target) : undefined));
-  // 同一目标/入口的边按 id 稳定排序，保证标签错位可预测且不会重叠
+
+  const tgtNode = useStore((st) =>
+    props.target ? st.nodeLookup.get(props.target) : undefined,
+  );
+  const srcNode = useStore((st) =>
+    props.source ? st.nodeLookup.get(props.source) : undefined,
+  );
+
+  // 同一目标/入口的边按 id 稳定排序
   const laneGroup = laneGroupForEdge(derived, props.target, props.targetHandleId);
   const laneIndex = laneIndexOfEdge(laneGroup, id);
-  const viewport = derived.viewport;
-  // 获取所有节点的几何信息用于智能避障
-  const allNodeGeometries = derived.nodeGeometries;
+  const laneCount = laneGroup.ids.length;
 
-  const routeMode = normalizeEdgeRouteMode((data as { routeMode?: unknown } | undefined)?.routeMode);
-  const isBackEdge = sourcePosition === "right" && targetPosition === "left" && targetX <= sourceX - 8;
-  const canManualLane = routeMode !== "auto" && !!srcNode && !!tgtNode;
+  const reducedMotion = usePrefersReducedMotion();
 
-  let path: string;
-  let labelX: number;
-  let labelY: number;
-  let direction = isBackEdge ? "←" : "→";
+  // ── hover state ───────────────────────────────────────────────────
+  const [hovered, setHovered] = useState(false);
+  const onMouseEnter = useCallback(() => setHovered(true), []);
+  const onMouseLeave = useCallback(() => setHovered(false), []);
 
-  if (canManualLane) {
-    // 手动通道只贴着源/目标节点上缘或下缘，避免旧版回边全部挤到全局底部。
-    const points = createBackEdgeLanePath(
-      { x: sourceX, y: sourceY },
-      { x: targetX, y: targetY },
-      routeMode,
-      allNodeGeometries,
-      laneIndex,
-    );
-    path = roundedPath(points, 18);
-    const anchor = chooseEdgeLabelAnchor(points, { target: { x: targetX, y: targetY }, laneOffset: laneIndex });
-    const point = placeLabelClearOfTarget(anchor.point, targetX, targetY, targetPosition, tgtNode?.measured?.width ?? 320, zoom);
-    labelX = point.x;
-    labelY = point.y;
-  } else if (isBackEdge) {
-    // 自动模式先识别近距离上下闭环；其余回边保持 A* 最短避障。
-    const balancedWaypoints = createBalancedBackEdgePath(
-      { x: sourceX, y: sourceY },
-      { x: targetX, y: targetY },
-      allNodeGeometries,
-      laneIndex,
-    );
-    const waypoints = balancedWaypoints ?? routeWithCache({
-      from: { x: sourceX, y: sourceY },
-      to: { x: targetX, y: targetY },
-      sourceId: props.source,
-      targetId: props.target,
-      nodeGeometries: allNodeGeometries,
-      excludeNodeIds: [props.source, props.target],
-    });
-    if (waypoints.length === 2) {
-      [path, labelX, labelY] = getSmoothStepPath({
-        sourceX,
-        sourceY,
-        targetX,
-        targetY,
-        sourcePosition,
-        targetPosition,
-        borderRadius: 18,
-        offset: 18,
-      });
-    } else {
-      path = roundedPath(waypoints, 18);
-      const anchor = chooseEdgeLabelAnchor(waypoints, { target: { x: targetX, y: targetY }, laneOffset: laneIndex });
-      const point = placeLabelClearOfTarget(anchor.point, targetX, targetY, targetPosition, tgtNode?.measured?.width ?? 320, zoom);
-      labelX = point.x;
-      labelY = point.y;
+  // ── 通用路由：候选生成 + 不变式过滤（线不穿卡），几何未测完成时回退手柄坐标 ──
+  const geometry = useMemo(() => {
+    const sourceRect = nodeRectOf(srcNode);
+    const targetRect = nodeRectOf(tgtNode);
+    if (!sourceRect || !targetRect) {
+      // 首帧回退：直接按 RF 手柄坐标连一条单段曲线
+      const fallback = buildRouteChain([
+        {
+          from: { x: sourceX, y: sourceY },
+          to: { x: targetX, y: targetY },
+          fromDir: toPortDir(sourcePosition),
+          toDir: toPortDir(targetPosition),
+        },
+      ]);
+      return {
+        path: fallback.path,
+        samples: fallback.samples,
+        start: { x: sourceX, y: sourceY },
+        end: { x: targetX, y: targetY },
+        targetDir: toPortDir(targetPosition),
+        legs: 1,
+        kind: "direct" as const,
+      };
     }
-  } else {
-    // 前向边：使用智能避障路由
-    
-    const waypoints = routeWithCache({
-      from: { x: sourceX, y: sourceY },
-      to: { x: targetX, y: targetY },
-      sourceId: props.source,
-      targetId: props.target,
-      nodeGeometries: allNodeGeometries,
-      excludeNodeIds: [props.source, props.target],
+    return computeEdgeEndpoints({
+      sourceNode: { id: props.source ?? "source", ...sourceRect },
+      targetNode: { id: props.target ?? "target", ...targetRect },
+      otherRects: derived.avoidRects(null),
+      sourceHandleId: props.sourceHandleId,
+      sourceHandlePoint: { x: sourceX, y: sourceY },
+      sourceHandleDir: toPortDir(sourcePosition),
     });
+  }, [srcNode, tgtNode, derived, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, props.source, props.target, props.sourceHandleId]);
 
-    if (waypoints.length === 2) {
-      // 无碰撞：使用 ComfyUI 风格贝塞尔曲线
-      path = bezierCurvePath(
-        { x: sourceX, y: sourceY },
-        { x: targetX, y: targetY }
-      );
-      const anchor = smoothStepLabelPoint({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, laneOffset: laneIndex });
-      const point = placeLabelClearOfTarget(anchor, targetX, targetY, targetPosition, tgtNode?.measured?.width ?? 320, zoom);
-      labelX = point.x;
-      labelY = point.y;
-    } else {
-      // 有碰撞：同一条绕行路径同时决定描边与标签，标签靠近目标入口
-      path = roundedPath(waypoints, 18);
-      const anchor = chooseEdgeLabelAnchor(waypoints, { target: { x: targetX, y: targetY }, laneOffset: laneIndex });
-      const point = placeLabelClearOfTarget(anchor.point, targetX, targetY, targetPosition, tgtNode?.measured?.width ?? 320, zoom);
-      labelX = point.x;
-      labelY = point.y;
-    }
-  }
+  const path = geometry.path;
+
+  // ── label position ────────────────────────────────────────────────
+  const labelPt = labelPointOnSamples(geometry.samples, laneIndex, laneCount);
+  const targetWidth = tgtNode?.measured?.width ?? 320;
+  const placedLabel = placeLabelClearOfTarget(
+    labelPt,
+    geometry.end.x,
+    geometry.end.y,
+    toPosition(geometry.targetDir),
+    targetWidth,
+    zoom,
+  );
+  const labelX = placedLabel.x;
+  const labelY = placedLabel.y;
+  const srcPt = geometry.start;
+  const tgtPt = geometry.end;
 
   const label = (data?.label as string) ?? "";
   const targetTitle = (tgtNode?.data as { title?: unknown } | undefined)?.title;
-  const targetName = typeof targetTitle === "string" && targetTitle.trim() ? targetTitle.trim() : "";
+  const targetName =
+    typeof targetTitle === "string" && targetTitle.trim() ? targetTitle.trim() : "";
+  const isBackEdge =
+    tgtPt.x <= srcPt.x - 8 && Math.abs(tgtPt.x - srcPt.x) > Math.abs(tgtPt.y - srcPt.y);
+  const direction = isBackEdge ? "\u2190" : "\u2192";
   const destination = targetName ? `${direction} ${targetName}` : direction;
-  // 同一目标入口的所有边共用一组尺寸和 lane 信息，否则每条边会各自判断边界，
-  // 出现"前两条在左、第三条跳到上方"的断裂布局。
-  const peerCount = laneGroup.ids.length;
-  const size = laneGroup.sizes[laneIndex] ?? estimateEdgeLabelSize(label, destination, zoom);
-  const targetAbsolute = tgtNode?.internals?.positionAbsolute;
-  const targetMeasured = tgtNode?.measured;
-  const targetRect = targetAbsolute
-    ? {
-        left: targetAbsolute.x,
-        top: targetAbsolute.y,
-        right: targetAbsolute.x + (targetMeasured?.width ?? 320),
-        bottom: targetAbsolute.y + (targetMeasured?.height ?? 180),
-      }
-    : undefined;
-  const avoidRects = derived.avoidRects(props.target);
-  const placement = placeEdgeLabelGroup(
-    { x: labelX, y: labelY },
-    { x: targetX, y: targetY },
-    targetPosition,
-    laneIndex,
-    peerCount,
-    zoom,
-    {
-      size,
-      peerSizes: laneGroup.sizes,
-      targetRect,
-      outwardGap: 18 / zoom,
-      viewport,
-      avoidRects,
-    },
-  );
-  const screenZoom = Math.max(zoom, 0.001);
-  const edgeColor = selected ? "var(--fc-edge-selected)" : "var(--fc-edge-color)";
-  const edgeStrokeWidth = (selected ? 2.6 : 2.1) / screenZoom;
-  const mainArrowSize = 9 / screenZoom;
-  const mainArrowPoints = edgeArrowPolygon({ x: targetX, y: targetY }, targetPosition ?? "left", mainArrowSize);
-  const anchorStyle = edgeLabelAnchorStyle({ x: placement.x, y: placement.y });  const cardStyle = edgeLabelCardStyle(zoom, placement.side);
 
-  // ComfyUI 风格：根据 sourceHandle 给连线着色
-  // 不同热点出发的连线用不同颜色，一眼区分流向
-  const handleColors: Record<string, string> = {
-    submit: "#6366F1",   // 主操作 - 靛蓝
-    pay: "#10B981",      // 支付 - 绿色
-    back: "#F59E0B",     // 返回 - 琥珀
-    cancel: "#EF4444",   // 取消 - 红色
-    row1: "#8B5CF6",     // 列表项1 - 紫
-    row2: "#06B6D4",     // 列表项2 - 青
-    row3: "#EC4899",     // 列表项3 - 粉
-    member: "#14B8A6",   // 成员 - 青绿
-    publish: "#F97316",  // 发布 - 橙
-    search: "#64748B",   // 搜索 - 灰蓝
-    banner: "#A855F7",   // 横幅 - 紫
-    logout: "#EF4444",   // 退出 - 红
-    yes: "#10B981",      // 判断是 - 绿
-    no: "#EF4444",       // 判断否 - 红
-    out: "#6B7280",      // 动作出口 - 灰
-  };
-  const handleColor = handleColors[props.sourceHandleId ?? ""] ?? null;
-  const strokeColor = handleColor && !selected ? handleColor : edgeColor;
+  // ── stroke color from sourceHandleId ──────────────────────────────
+  const strokeColor = selected ? "var(--fc-edge-selected)" : handleColorOf(props.sourceHandleId);
+
+  // ── arrow marker config ─────────────────────────────────────────
+  // 箭头与线同色。尺寸按 1/zoom 反向补偿（fit view 后仍恒定可见），
+  // 但补偿系数封顶 2.2：zoom 过小时无限补偿会让箭头比节点还醒目。
+  const markerId = getArrowMarkerId(strokeColor);
+  const arrowScale = Math.min(2.2, 1 / screenZoom);
+  const arrowMarker = useMemo(
+    () => createArrowMarker(markerId, strokeColor, arrowScale),
+    [markerId, strokeColor, arrowScale],
+  );
+
+  // ── zoom-compensated sizes ────────────────────────────────────────
+  // 线宽：hover 2.5，selected 3，default 2（均除以 screenZoom）
+  const baseStrokeWidth = 2 / screenZoom;
+  const hoverStrokeWidth = 2.5 / screenZoom;
+  const selectedStrokeWidth = 3 / screenZoom;
+  const mainStrokeWidth = selected
+    ? selectedStrokeWidth
+    : hovered
+      ? hoverStrokeWidth
+      : baseStrokeWidth;
+
+  // 起点小圆点：标记连接从哪里出发
+  const dotRadius = 2.5 / screenZoom;
+
+  // 选中时轻微 drop-shadow 发光
+  const glowFilter = selected
+    ? "drop-shadow(0 0 4px rgba(99,102,241,0.5))"
+    : undefined;
+
   return (
     <>
+      {/* ── SVG marker 定义：箭头附着在 path 终点 ─────────────────── */}
+      <defs>
+        <marker
+          id={arrowMarker.id}
+          markerWidth={arrowMarker.markerWidth}
+          markerHeight={arrowMarker.markerHeight}
+          refX={arrowMarker.refX}
+          refY={arrowMarker.refY}
+          orient={arrowMarker.orient}
+          markerUnits="userSpaceOnUse"
+        >
+          <path d={arrowMarker.path} fill={arrowMarker.color} />
+        </marker>
+      </defs>
+
+      {/* ── 主连线：贝塞尔曲线，marker-end 附着箭头 ───────────────── */}
       <BaseEdge
         id={id}
         path={path}
-        markerEnd={undefined}
+        markerEnd={`url(#${arrowMarker.id})`}
         style={{
           stroke: strokeColor,
-          strokeWidth: edgeStrokeWidth,
+          strokeWidth: mainStrokeWidth,
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          opacity: selected ? 1.0 : 0.92,
+          filter: glowFilter,
+          vectorEffect: "non-scaling-stroke",
         }}
       />
-      <polygon
-        points={mainArrowPoints}
+
+      {/* ── 起点圆点：标记连接从哪里出发 ───────────────────────────── */}
+      <circle
+        cx={srcPt.x}
+        cy={srcPt.y}
+        r={dotRadius}
         fill={strokeColor}
         stroke="var(--fc-edge-anchor-stroke, #fff)"
         strokeWidth={0.8 / screenZoom}
         pointerEvents="none"
       />
-      <path d={path} fill="none" stroke="transparent" strokeWidth={18} style={{ cursor: "pointer" }} />
+
+      {/* ── 流动动画小点：沿路线从起点移动到终点（尊重减少动态效果） ── */}
+      {!reducedMotion ? (
+        <circle r={2.5 / screenZoom} fill={strokeColor} opacity={0.9} pointerEvents="none">
+          <animateMotion
+            dur="2s"
+            repeatCount="indefinite"
+            path={path}
+            keyPoints="0;1"
+            keyTimes="0;1"
+            calcMode="linear"
+          />
+        </circle>
+      ) : null}
+
+      {/* ── 透明命区域：宽 path，方便点击/悬停选中 ───────────────── */}
+      {/* strokeWidth + non-scaling-stroke：命中区恒定 10 屏幕像素，
+          不随 zoom 放大后大范围盖住附近的连接点。 */}
+      <path
+        d={path}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={10}
+        style={{ cursor: "pointer", vectorEffect: "non-scaling-stroke" }}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      />
+
+      {/* ── 标签（仅 selected 时显示） ─────────────────────────────── */}
       {label && showLabel && selected ? (
         <EdgeLabelRenderer>
           <div
@@ -305,11 +343,32 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
             data-edge-id={id}
             data-target-id={props.target}
             data-label-lane={laneIndex}
-            style={anchorStyle}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: 0,
+              height: 0,
+              transform: `translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: "none",
+            }}
           >
-            <div className={`fc-edge-label${selected ? " is-selected" : ""}`} style={cardStyle} title={`${label} ${destination}`}>
+            <div
+              className="fc-edge-label is-selected"
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                transform: `translate(-100%, -50%) scale(${Math.max(1, Math.min(3.2, 1 / screenZoom))})`,
+                transformOrigin: "right center",
+              }}
+              title={`${label} ${destination}`}
+            >
               <span className="fc-edge-label-text">{label}</span>
-              <span className="fc-edge-label-target" aria-label={`目标界面：${targetName || "未命名界面"}`}>
+              <span
+                className="fc-edge-label-target"
+                aria-label={`\u76EE\u6807\u754C\u9762\uFF1A${targetName || "\u672A\u547D\u540D\u754C\u9762"}`}
+              >
                 {destination}
               </span>
             </div>
@@ -320,6 +379,94 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   );
 });
 
+// ── 连接预览线（拖动创建连接时的临时线） ──────────────────────────────
 
+/**
+ * 交互式连接预览线：拖出连线时的实时反馈。
+ * - 颜色继承起点热点的语义色（与落线后的真实连线一致，所见即所得）；
+ * - 虚线沿路径流动（SMIL dash 动画，尊重 prefers-reduced-motion）；
+ * - 吸附到合法目标时变实线 + 发光 + 箭头；非法目标保持虚线灰色提示不可连；
+ * - 线宽随 1/zoom 反向补偿，任何缩放级别手感一致。
+ */
+export const BezierConnectionLine = memo(function BezierConnectionLine({
+  fromX,
+  fromY,
+  fromPosition,
+  toX,
+  toY,
+  toPosition,
+  fromHandle,
+  connectionStatus,
+}: ConnectionLineComponentProps) {
+  const srcDir = toPortDir(fromPosition);
+  const tgtDir = toPortDir(toPosition);
 
+  const bez = getBezierPath(
+    { x: fromX, y: fromY },
+    { x: toX, y: toY },
+    srcDir,
+    tgtDir,
+  );
 
+  const reducedMotion = usePrefersReducedMotion();
+  const color = handleColorOf(fromHandle?.id ?? null);
+  const attached = connectionStatus === "valid";
+  const invalid = connectionStatus === "invalid";
+
+  // 拖拽中把线宽/虚线按 zoom 反向放大，屏幕上恒定粗细
+  const zoom = useStore((st) => st.transform[2]);
+  const screenZoom = Math.max(zoom, 0.001);
+  const width = 2.4 / screenZoom;
+  const dash = `${7 / screenZoom} ${5 / screenZoom}`;
+  const headR = 3.5 / screenZoom;
+  const glowR = 7 / screenZoom;
+
+  const stroke = attached ? color : invalid ? "#94a3b8" : color;
+  const opacity = invalid ? 0.45 : attached ? 1 : 0.85;
+
+  return (
+    <g>
+      {/* 吸附合法目标时的柔光晕底 */}
+      {attached ? (
+        <path
+          d={bez.path}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={width * 2.6}
+          strokeLinecap="round"
+          opacity={0.18}
+        />
+      ) : null}
+      <path
+        d={bez.path}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={width}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={attached ? "none" : dash}
+        opacity={opacity}
+      >
+        {!reducedMotion && !attached ? (
+          <animate
+            attributeName="stroke-dashoffset"
+            from="0"
+            to={String(-(7 + 5) / screenZoom)}
+            dur="0.5s"
+            repeatCount="indefinite"
+          />
+        ) : null}
+      </path>
+      {/* 鼠标端指示点：吸附成功变实心环，否则空心 */}
+      <circle
+        cx={toX}
+        cy={toY}
+        r={attached ? glowR : headR}
+        fill={attached ? stroke : "var(--fc-surface-input, #fff)"}
+        stroke={stroke}
+        strokeWidth={width * 0.9}
+        opacity={invalid ? 0.4 : 0.95}
+      />
+    </g>
+  );
+});

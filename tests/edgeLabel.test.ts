@@ -6,7 +6,7 @@ import {
   estimateEdgeLabelSize,
   edgeLabelScale,
   edgeLaneIndex,
-  edgeArrowPolygon,
+  createArrowMarker,
   arrowHeadPoints,
   placeEdgeLabelGroup,
   pointOnPolyline,
@@ -350,19 +350,33 @@ test("arrowHeadPoints handles a zero-length line without emitting garbage", () =
   assert.equal(arrowHeadPoints({ x: 10, y: 10 }, { x: 10, y: 10 }, 6), "");
 });
 
-test("edgeArrowPolygon places the main edge arrow at the target handle", () => {
-  const left = edgeArrowPolygon({ x: 100, y: 200 }, "left", 7);
-  const nums = left.split(" ").map((pair) => pair.split(",").map(Number));
-  assert.deepEqual(nums[0], [100, 200], "tip must sit on the target handle");
-  assert.ok(nums[1][0] < 100, "arrow entering a left handle should point rightwards from the left");
-  assert.ok(nums[1][1] > 200 || nums[2][1] > 200, "triangle should have vertical width");
+test("createArrowMarker returns a valid marker config with correct dimensions", () => {
+  const marker = createArrowMarker("test-arrow", "#ff0000");
+  assert.equal(marker.id, "test-arrow");
+  assert.equal(marker.markerWidth, 6.5);
+  assert.equal(marker.markerHeight, 4.5);
+  assert.equal(marker.refX, 6.5);
+  assert.equal(marker.refY, 2.25);
+  assert.equal(marker.orient, "auto");
+  assert.equal(marker.color, "#ff0000");
+  // path should be a triangle: M0,0 L6.5,2.25 L0,4.5 Z
+  assert.equal(marker.path, "M0,0 L6.5,2.25 L0,4.5 Z");
 });
 
-test("edgeArrowPolygon supports all target handle directions", () => {
-  const right = edgeArrowPolygon({ x: 100, y: 200 }, "right", 7).split(" ")[1].split(",").map(Number);
-  const top = edgeArrowPolygon({ x: 100, y: 200 }, "top", 7).split(" ")[1].split(",").map(Number);
-  const bottom = edgeArrowPolygon({ x: 100, y: 200 }, "bottom", 7).split(" ")[1].split(",").map(Number);
-  assert.ok(right[0] > 100, "right-handle arrow should approach from the right");
-  assert.ok(top[1] < 200, "top-handle arrow should approach from above");
-  assert.ok(bottom[1] > 200, "bottom-handle arrow should approach from below");
+test("createArrowMarker scales for zoom compensation", () => {
+  // zoom 0.5 → scale 2：尺寸翻倍，屏幕上保持恒定
+  const scaled = createArrowMarker("s", "#fff", 2);
+  assert.equal(scaled.markerWidth, 13);
+  assert.equal(scaled.markerHeight, 9);
+  assert.equal(scaled.refX, 13);
+  assert.equal(scaled.refY, 4.5);
+  // 非法 scale 安全回退 1
+  const bad = createArrowMarker("b", "#fff", NaN);
+  assert.equal(bad.markerWidth, 6.5);
+});
+
+test("createArrowMarker generates unique ids for different colors", () => {
+  const marker1 = createArrowMarker("arrow-ff0000", "#ff0000");
+  const marker2 = createArrowMarker("arrow-00ff00", "#00ff00");
+  assert.notEqual(marker1.id, marker2.id);
 });

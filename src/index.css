@@ -699,8 +699,8 @@ button {
 }
 
 .fc-handle {
-  width: 9px !important;
-  height: 9px !important;
+  width: 12px !important;
+  height: 12px !important;
   border-radius: 50% !important;
   background: var(--fc-accent) !important;
   border: 2px solid #0b0e13 !important;
@@ -708,18 +708,18 @@ button {
 }
 
 .fc-handle:hover {
-  transform: scale(1.35);
-  box-shadow: 0 0 0 5px rgba(109, 124, 255, 0.22);
+  transform: scale(1.4);
+  box-shadow: 0 0 0 6px rgba(109, 124, 255, 0.28);
 }
 
-/* 命中区随画布缩放反向放大：无论 zoom 多小，屏幕上仍有约 28px 可拖。 */
+/* 命中区随画布缩放反向放大：无论 zoom 多小，屏幕上仍有约 32px 可拖。 */
 .fc-handle::after {
   content: "";
   position: absolute;
   left: 50%;
   top: 50%;
-  width: calc(var(--fc-handle-hit-size, 28px) / var(--fc-zoom, 1));
-  height: calc(var(--fc-handle-hit-size, 28px) / var(--fc-zoom, 1));
+  width: calc(var(--fc-handle-hit-size, 32px) / var(--fc-zoom, 1));
+  height: calc(var(--fc-handle-hit-size, 32px) / var(--fc-zoom, 1));
   transform: translate(-50%, -50%);
   border-radius: 50%;
   pointer-events: all;
@@ -727,13 +727,52 @@ button {
 
 .fc-handle-hotspot {
   right: -13px !important;
-  background: #8b93a7 !important;
-  opacity: 0.9;
+  /* 颜色由 nodes.tsx 内联注入（handleColorOf，与连线/箭头同色） */
+  opacity: 0.92;
+}
+
+/* Figma 式自由起线区：贴边透明条（视觉不可见、可命中）。
+   厚度用 --fc-zoom 反向补偿：无论画布缩放多少，屏幕上始终约 28px 可抓。 */
+.fc-handle-free {
+  width: calc(28px / var(--fc-zoom, 1)) !important;
+  height: calc(28px / var(--fc-zoom, 1)) !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 8px;
+  opacity: 0;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+.fc-handle-free.react-flow__handle-top,
+.fc-handle-free.react-flow__handle-bottom {
+  width: 100% !important;
+  height: calc(28px / var(--fc-zoom, 1)) !important;
+}
+
+.fc-handle-free.react-flow__handle-right {
+  width: calc(28px / var(--fc-zoom, 1)) !important;
+  height: 100% !important;
 }
 
 .fc-handle-hotspot:hover {
   opacity: 1;
-  background: var(--fc-accent) !important;
+  filter: brightness(1.15);
+}
+
+/* ── 拖线连接的实时反馈 ─────────────────────────────────────────── */
+/* 拖线过程中（connectionindicator 挂到根上），所有可落点微微呼吸提示 */
+.react-flow.connectionindicator .fc-handle:not(.fc-handle-free) {
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+}
+
+/* 鼠标悬停的可落点：放大 + 亮环，明确的「松手即连」确认 */
+.fc-handle.connectionindicator:hover,
+.fc-handle.react-flow__handle-connecting {
+  transform: scale(1.55);
+  box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.3) !important;
+  filter: brightness(1.2);
+  z-index: 10;
 }
 
 .fc-handle-target {
@@ -751,8 +790,8 @@ button {
 /* 判断节点的 是/否：视觉稍大，命中区同样走上面的 zoom 稳定规则。 */
 .fc-handle-yes,
 .fc-handle-no {
-  width: 12px !important;
-  height: 12px !important;
+  width: 14px !important;
+  height: 14px !important;
 }
 
 .fc-edge-label {
@@ -773,13 +812,23 @@ button {
   background: var(--fc-label-bg);
 }
 
+/* 小地图默认收成小方块：整幅面板悬在画布上时会盖住下方卡片（含其连接点），
+   悬停才展开到完整尺寸。 */
 .fc-minimap {
-  width: 168px !important;
-  height: 118px !important;
+  width: 36px !important;
+  height: 36px !important;
   background: var(--fc-surface-input) !important;
   border: 1px solid var(--fc-border);
   border-radius: 10px;
   overflow: hidden;
+  opacity: 0.65;
+  transition: width 0.16s ease, height 0.16s ease, opacity 0.16s ease;
+}
+
+.fc-minimap:hover {
+  width: 168px !important;
+  height: 118px !important;
+  opacity: 1;
 }
 
 .fc-controls {
@@ -987,7 +1036,10 @@ button {
   border-radius: 20px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
+  /* clip（而非 hidden）+ 溢出余量：连接手柄悬在卡片右缘外约 7px，
+     hidden 会把点连视觉带命中区一起裁掉，导致「点连不上卡片」。 */
+  overflow: clip;
+  overflow-clip-margin: 12px;
   color: #0f172a;
   font-size: 13px;
   line-height: 1.45;
@@ -1448,6 +1500,115 @@ button {
 .fc-snap-panel .fc-search-results {
   max-height: 44vh;
 }
+
+/* ---------- AI 助手面板 ---------- */
+
+.fc-ai-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fc-ai-input {
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--fc-text);
+  background: var(--fc-surface-input);
+  border: 1px solid var(--fc-border);
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+  min-height: 64px;
+}
+
+.fc-ai-input:focus {
+  border-color: var(--fc-accent);
+  box-shadow: 0 0 0 3px rgba(109, 124, 255, 0.18);
+}
+
+.fc-ai-examples {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fc-ai-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fc-ai-preview {
+  padding: 10px 12px;
+  border: 1px solid rgba(109, 124, 255, 0.35);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--fc-accent) 8%, transparent);
+}
+
+.fc-ai-scenario {
+  font-size: 12.5px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.fc-ai-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fc-ai-warn {
+  font-size: 12.5px;
+  color: #f1a2a2;
+  padding: 6px 4px;
+}
+
+.fc-ai-wires {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.fc-ai-wires > b {
+  font-size: 12px;
+}
+
+.fc-ai-wires button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--fc-text);
+  text-align: left;
+  background: var(--fc-surface-input);
+  border: 1px solid var(--fc-border);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.fc-ai-wires button:hover {
+  border-color: var(--fc-accent);
+}
+
+.fc-ai-wires button em {
+  flex-shrink: 0;
+  font-style: normal;
+  font-weight: 600;
+  color: var(--fc-accent);
+}
+
+/* ---------- end AI 助手 ---------- */
 
 /* ---------- end 多画布 ---------- */
 
@@ -1984,6 +2145,7 @@ button {
   }
 
   .fc-handle,
+  .fc-handle-free,
   .fc-hotspot-pin {
     display: none !important;
   }

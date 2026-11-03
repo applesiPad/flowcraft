@@ -2,6 +2,7 @@ import { memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Icon } from "./Icon";
 import { EditorContext, ScreenView } from "./ScreenView";
+import { handleColorOf } from "./edgeColors";
 import type { DecisionData, NoteData, ScreenData } from "./types";
 
 export const ScreenNode = memo(function ScreenNode({ id, data, selected }: NodeProps) {
@@ -12,6 +13,21 @@ export const ScreenNode = memo(function ScreenNode({ id, data, selected }: NodeP
   return (
     <div className={`fc-node fc-node-screen${selected ? " is-selected" : ""}${walkMode ? " is-walk-node" : ""}`}>
       <div className="fc-node-badge">界面</div>
+      {/* Figma 式自由起线区：贴着卡片边缘的透明条，抓住即从该卡发起连线。
+          渲染在 ScreenView 之前，可见的连接点在其上层、优先命中。
+          左侧留给入口锚点，不设起线区；走查模式下停用。 */}
+      {!walkMode
+        ? (["top", "right", "bottom"] as const).map((side) => (
+            <Handle
+              key={side}
+              id={`free-${side}`}
+              type="source"
+              position={side === "top" ? Position.Top : side === "right" ? Position.Right : Position.Bottom}
+              className="fc-handle-free"
+              isConnectable
+            />
+          ))
+        : null}
       <ScreenView
         data={d}
         nodeId={id}
@@ -31,7 +47,7 @@ export const ScreenNode = memo(function ScreenNode({ id, data, selected }: NodeP
               type="source"
               position={Position.Right}
               className="fc-handle fc-handle-hotspot"
-              style={{ top: "50%" }}
+              style={{ top: "50%", background: handleColorOf(el.id) }}
               isConnectable
             />
           ) : null
@@ -52,8 +68,8 @@ export const DecisionNode = memo(function DecisionNode({ data, selected }: NodeP
       </div>
       <div className="fc-decision-hint">条件分支</div>
       <Handle id="in" type="target" position={Position.Left} className="fc-handle fc-handle-target" />
-      <Handle id="yes" type="source" position={Position.Right} className="fc-handle fc-handle-yes" />
-      <Handle id="no" type="source" position={Position.Bottom} className="fc-handle fc-handle-no" />
+      <Handle id="yes" type="source" position={Position.Right} className="fc-handle fc-handle-yes" style={{ background: handleColorOf("yes") }} />
+      <Handle id="no" type="source" position={Position.Bottom} className="fc-handle fc-handle-no" style={{ background: handleColorOf("no") }} />
       <span className="fc-handle-label fc-handle-label-yes">是</span>
       <span className="fc-handle-label fc-handle-label-no">否</span>
     </div>

@@ -429,13 +429,46 @@ export function arrowHeadPoints(start: EdgeLabelPoint, end: EdgeLabelPoint, size
   return `${end.x},${end.y} ${leftX},${leftY} ${rightX},${rightY}`;
 }
 
-/** 根据目标把手方向生成主连线终点箭头，tip 固定在目标把手中心。 */
-export function edgeArrowPolygon(target: EdgeLabelPoint, targetPosition: EdgeLabelSide, size: number): string {
-  const safeSize = Math.max(0, size);
-  const start =
-    targetPosition === "left" ? { x: target.x - safeSize, y: target.y } :
-    targetPosition === "right" ? { x: target.x + safeSize, y: target.y } :
-    targetPosition === "top" ? { x: target.x, y: target.y - safeSize } :
-    { x: target.x, y: target.y + safeSize };
-  return arrowHeadPoints(start, target, safeSize);
+/**
+ * 生成 SVG marker 元素配置，用于 path 的 marker-end 属性。
+ * 箭头为三角形，基准长 8px、宽 6px；scale 用于画布缩放补偿——
+ * markerUnits="userSpaceOnUse" 下 marker 随画布缩放，fit view 时会缩小到不可见，
+ * 调用方传入 1/zoom 让箭头在屏幕上保持恒定大小（与 non-scaling-stroke 的线宽同思路）。
+ *
+ * @param id - marker 的唯一标识符，用于 url(#id) 引用
+ * @param color - 箭头填充颜色
+ * @param scale - 尺寸缩放系数（默认 1 = 原始 8×6）
+ */
+export function createArrowMarker(
+  id: string,
+  color: string,
+  scale = 1,
+): {
+  id: string;
+  markerWidth: number;
+  markerHeight: number;
+  refX: number;
+  refY: number;
+  orient: "auto";
+  path: string;
+  color: string;
+} {
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  // 基准 6.5×4.5：与 2px 线宽成比例，补偿后大而不拙
+  const ARROW_LENGTH = round2(6.5 * safeScale);
+  const ARROW_WIDTH = round2(4.5 * safeScale);
+  const halfWidth = round2(ARROW_WIDTH / 2);
+  // 三角形 path：尖端在右侧中心
+  const path = `M0,0 L${ARROW_LENGTH},${halfWidth} L0,${ARROW_WIDTH} Z`;
+  return {
+    id,
+    markerWidth: ARROW_LENGTH,
+    markerHeight: ARROW_WIDTH,
+    refX: ARROW_LENGTH, // 尖端 x 坐标
+    refY: halfWidth, // 尖端 y 坐标（垂直居中）
+    orient: "auto",
+    path,
+    color,
+  };
 }

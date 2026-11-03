@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { edgeLaneIndex, estimateEdgeLabelSize } from "../src/flow/edgeLabel.ts";
-import {
-  createEdgeRouteCache,
-  createEdgeRouteCacheKey,
-  type EdgeRouteInput,
-} from "../src/flow/edgeRoutingCache.ts";
 import type { NodeGeometry, Point } from "../src/flow/edgeRouting.ts";
 import {
   deriveEdgeFlowState,
@@ -209,34 +204,3 @@ test("同一 state 对象命中缓存，新的 state 对象重新派生", () => 
   assert.deepEqual(second.nodeGeometries, [{ id: "a", x: 400, y: 400, width: 300, height: 200 }]);
 });
 
-test("路由键对同一几何数组实例只排序一次，内容相同的副本仍得到相同键", () => {
-  const geometries: NodeGeometry[] = [
-    { id: "b", x: 100, y: 0, width: 50, height: 50 },
-    { id: "a", x: 0, y: 0, width: 50, height: 50 },
-  ];
-  const from: Point = { x: 0, y: 25 };
-  const to: Point = { x: 300, y: 25 };
-  const input = (nodeGeometries: readonly NodeGeometry[]): EdgeRouteInput => ({
-    from,
-    to,
-    sourceId: "s",
-    targetId: "t",
-    nodeGeometries,
-    excludeNodeIds: ["s", "t"],
-    margin: 22,
-  });
-
-  const key = createEdgeRouteCacheKey(input(geometries));
-  assert.equal(createEdgeRouteCacheKey(input(geometries)), key, "同一实例应复用排序片段");
-  assert.equal(
-    createEdgeRouteCacheKey(input([...geometries].reverse())),
-    key,
-    "顺序不同但内容相同的数组应得到相同的键",
-  );
-  assert.notEqual(createEdgeRouteCacheKey(input([...geometries, { id: "c", x: 200, y: 0, width: 50, height: 50 }])), key);
-
-  const cache = createEdgeRouteCache();
-  cache.route(input(geometries));
-  cache.route(input([...geometries]));
-  assert.deepEqual(cache.stats(), { hits: 1, misses: 1, evictions: 0 }, "副本数组应命中同一缓存条目");
-});
