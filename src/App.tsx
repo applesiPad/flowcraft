@@ -100,9 +100,101 @@ const TEMPLATE_STORAGE_KEY = "flowcraft.templates.v1";
 const ANNOTATION_STORAGE_KEY = "flowcraft.annotations.v1";
 /** 可视区裁剪开关持久化（2026-11-01 基线测量后默认开启，见 docs/perf-baseline-2026-11-01.md） */
 const CULL_STORAGE_KEY = "flowcraft.cull.v1";
-/** AI 面板手动拖放后的位置（视口坐标），让用户把面板放到不挡画布的地方 */
+/** 可拖拽面板的视口位置（fixed 坐标，左上角），用户拖过后不再跟随默认位 */
 const AI_PANEL_POS_KEY = "flowcraft.aiPanelPos.v1";
+const PALETTE_POS_KEY = "flowcraft.palettePos.v1";
+const INSPECTOR_POS_KEY = "flowcraft.inspectorPos.v1";
 const EMPTY_HOTSPOT_KEYS = new Set<string>();
+
+/** 面板拖放位置钳制回视口内（8px 内边距），rect 为面板当前尺寸。 */
+function clampPanelPos(pos: { x: number; y: number }, rect: { width: number; height: number }) {
+  return {
+    x: Math.min(Math.max(pos.x, 8), Math.max(window.innerWidth - rect.width, 8)),
+    y: Math.min(Math.max(pos.y, 8), Math.max(window.innerHeight - rect.height, 8)),
+  };
+}
+
+/**
+ * 可拖拽面板通用机制：头部 onPointerDown 起拖，窗口 move 跟随 + 视口钳制，
+ * 松手/resize 持久化与钳制，双击把手调 reset 复位。pos=null 表示未拖过（跟随默认位）。
+ */
+function usePanelDrag(storageKey: string, active: boolean) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(storageKey) ?? "null") as { x: number; y: number } | null;
+      return raw && typeof raw.x === "number" && typeof raw.y === "number" ? raw : null;
+    } catch {
+      return null;
+    }
+  });
+  const ref = useRef<HTMLElement | null>(null);
+  const dragOffset = useRef<{ dx: number; dy: number } | null>(null);
+
+  const onDragStart = useCallback((event: React.PointerEvent) => {
+    // 只响应主键；面板内文本输入/按钮的点击不触发拖动
+    if (event.button !== 0) return;
+    const panel = ref.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    dragOffset.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+    event.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    const onMove = (event: PointerEvent) => {
+      const offset = dragOffset.current;
+      const panel = ref.current;
+      if (!offset || !panel) return;
+      const rect = panel.getBoundingClientRect();
+      setPos(clampPanelPos({ x: event.clientX - offset.dx, y: event.clientY - offset.dy }, rect));
+    };
+    const onUp = () => {
+      if (!dragOffset.current) return;
+      dragOffset.current = null;
+      setPos((current) => {
+        if (!current) return current;
+        const rect = ref.current?.getBoundingClientRect();
+        const clamped = rect ? clampPanelPos(current, rect) : current;
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(clamped));
+        } catch {
+          /* 存储满/禁用时静默，只影响下次打开位置 */
+        }
+        return clamped;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [active, storageKey]);
+
+  /** 窗口缩放时把面板拉回可视区，避免面板留在屏幕外。 */
+  useEffect(() => {
+    if (!active || !pos) return;
+    const onResize = () => {
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos((current) => (current ? clampPanelPos(current, rect) : current));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [active, pos]);
+
+  const reset = useCallback(() => {
+    setPos(null);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* ignore */
+    }
+  }, [storageKey]);
+
+  return { ref, pos, onDragStart, reset };
+}
 
 type SearchItem = {
   key: string;
@@ -196,17 +288,10 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [aiPlan, setAiPlan] = useState<AiPlanResult | null>(null);
   /** 「续写」锚定的卡片 id：插入时把生成流程放到这张卡旁边，而不是全局空白区 */
   const [aiAnchorNodeId, setAiAnchorNodeId] = useState<string | null>(null);
-  /** AI 面板拖放位置（fixed 视口坐标，左上角）。null = 未拖过，跟随默认右上位 */
-  const [aiPanelPos, setAiPanelPos] = useState<{ x: number; y: number } | null>(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(AI_PANEL_POS_KEY) ?? "null") as { x: number; y: number } | null;
-      return raw && typeof raw.x === "number" && typeof raw.y === "number" ? raw : null;
-    } catch {
-      return null;
-    }
-  });
-  const aiPanelRef = useRef<HTMLElement | null>(null);
-  const aiPanelDrag = useRef<{ dx: number; dy: number } | null>(null);
+  const aiPanel = usePanelDrag(AI_PANEL_POS_KEY, aiOpen);
+  /** 桌面常驻抽屉的拖拽（移动端抽屉是另一套 fixed 结构，不受影响） */
+  const palettePanel = usePanelDrag(PALETTE_POS_KEY, true);
+  const inspectorPanel = usePanelDrag(INSPECTOR_POS_KEY, true);
   const [snapshots, setSnapshots] = useState<FlowSnapshot[]>([]);
   const [renamingSnapId, setRenamingSnapId] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<{ name: string; diff: FlowDiff } | null>(null);
@@ -550,91 +635,6 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   );
 
   /* ---------- AI 助手 ---------- */
-  /** AI 面板头部拖拽：按住拖动，松手时钳制回视口内并持久化。 */
-  const onAiPanelDragStart = useCallback((event: React.PointerEvent) => {
-    // 只响应主键；面板内文本输入/按钮的点击不触发拖动
-    if (event.button !== 0) return;
-    const panel = aiPanelRef.current;
-    if (!panel) return;
-    const rect = panel.getBoundingClientRect();
-    // 记录指针相对面板左上角的偏移，move 时保持这段相对距离
-    aiPanelDrag.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-    event.preventDefault();
-  }, []);
-
-  useEffect(() => {
-    if (!aiOpen) return;
-    const onMove = (event: PointerEvent) => {
-      const drag = aiPanelDrag.current;
-      const panel = aiPanelRef.current;
-      if (!drag || !panel) return;
-      const rect = panel.getBoundingClientRect();
-      const maxX = window.innerWidth - rect.width;
-      const maxY = window.innerHeight - rect.height;
-      const next = {
-        x: Math.min(Math.max(event.clientX - drag.dx, 8), Math.max(maxX, 8)),
-        y: Math.min(Math.max(event.clientY - drag.dy, 8), Math.max(maxY, 8)),
-      };
-      setAiPanelPos(next);
-    };
-    const onUp = () => {
-      if (!aiPanelDrag.current) return;
-      aiPanelDrag.current = null;
-      // 松手时持久化；面板被拖出视口外时先钳制再存
-      setAiPanelPos((pos) => {
-        if (!pos) return pos;
-        const rect = aiPanelRef.current?.getBoundingClientRect();
-        const clamped = rect
-          ? {
-              x: Math.min(Math.max(pos.x, 8), Math.max(window.innerWidth - rect.width, 8)),
-              y: Math.min(Math.max(pos.y, 8), Math.max(window.innerHeight - rect.height, 8)),
-            }
-          : pos;
-        try {
-          localStorage.setItem(AI_PANEL_POS_KEY, JSON.stringify(clamped));
-        } catch {
-          /* 存储满/禁用时静默，只影响下次打开位置 */
-        }
-        return clamped;
-      });
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [aiOpen]);
-
-  /** 窗口缩放时把面板拉回可视区，避免面板留在屏幕外。 */
-  useEffect(() => {
-    if (!aiOpen || !aiPanelPos) return;
-    const onResize = () => {
-      const rect = aiPanelRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setAiPanelPos((pos) =>
-        pos
-          ? {
-              x: Math.min(Math.max(pos.x, 8), Math.max(window.innerWidth - rect.width, 8)),
-              y: Math.min(Math.max(pos.y, 8), Math.max(window.innerHeight - rect.height, 8)),
-            }
-          : pos,
-      );
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [aiOpen, aiPanelPos]);
-
-  /** 复位面板位置（双击拖把手），清掉持久化记录回到默认右上位。 */
-  const resetAiPanelPos = useCallback(() => {
-    setAiPanelPos(null);
-    try {
-      localStorage.removeItem(AI_PANEL_POS_KEY);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   /** 全画布死路补线建议（面板与选中上下文共用同一份）。 */
   const wireSuggestions = useMemo(
     () => suggestWires(screenViewsForSuggestion(nodes), edges),
@@ -2179,15 +2179,15 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         {aiOpen ? (() => {
           return (
             <section
-              ref={aiPanelRef}
-              className={`fc-search-panel fc-ai-panel${aiPanelPos ? " is-floating" : ""}`}
-              style={aiPanelPos ? { left: aiPanelPos.x, top: aiPanelPos.y, right: "auto" } : undefined}
+              ref={aiPanel.ref}
+              className={`fc-search-panel fc-ai-panel${aiPanel.pos ? " is-floating" : ""}`}
+              style={aiPanel.pos ? { left: aiPanel.pos.x, top: aiPanel.pos.y, right: "auto" } : undefined}
               aria-label="AI 助手"
             >
               <div
                 className="fc-panel-head fc-ai-head"
-                onPointerDown={onAiPanelDragStart}
-                onDoubleClick={resetAiPanelPos}
+                onPointerDown={aiPanel.onDragStart}
+                onDoubleClick={aiPanel.reset}
                 title="拖动移动面板 · 双击复位"
               >
                 <b><span className="fc-ai-badge" aria-hidden="true"><Icon name="sparkle" size={11} /></span>AI 助手</b>
@@ -2416,15 +2416,29 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         ) : null}
 
         <div className="fc-main">
-          <aside className="fc-left">
-            <Palette
-              onAdd={addAtCenter}
-              customTemplates={customTemplates}
-              onDeleteTemplate={deleteScreenTemplate}
-              onImportTemplates={importTemplates}
-              onExportTemplates={exportTemplates}
-              onImportError={showToast}
-            />
+          <aside
+            ref={palettePanel.ref}
+            className={`fc-left${palettePanel.pos ? " is-floating" : ""}`}
+            style={palettePanel.pos ? ({ "--panel-x": `${palettePanel.pos.x}px`, "--panel-y": `${palettePanel.pos.y}px` } as React.CSSProperties) : undefined}
+          >
+            <div
+              className="fc-drawer-grip"
+              onPointerDown={palettePanel.onDragStart}
+              onDoubleClick={palettePanel.reset}
+              title="拖动移动 · 双击复位"
+            >
+              <Icon name="grip" size={13} />
+            </div>
+            <div className="fc-drawer-body">
+              <Palette
+                onAdd={addAtCenter}
+                customTemplates={customTemplates}
+                onDeleteTemplate={deleteScreenTemplate}
+                onImportTemplates={importTemplates}
+                onExportTemplates={exportTemplates}
+                onImportError={showToast}
+              />
+            </div>
           </aside>
 
           <div
@@ -2534,8 +2548,22 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
             {restored ? <div className="fc-restored">已恢复上次编辑的流程</div> : null}
           </div>
 
-          <aside className={`fc-right${inspectorOpen ? " is-open" : ""}`} id="fc-inspector-panel">
-            <Inspector
+          <aside
+            ref={inspectorPanel.ref}
+            className={`fc-right${inspectorOpen ? " is-open" : ""}${inspectorPanel.pos ? " is-floating" : ""}`}
+            id="fc-inspector-panel"
+            style={inspectorPanel.pos ? ({ "--panel-x": `${inspectorPanel.pos.x}px`, "--panel-y": `${inspectorPanel.pos.y}px` } as React.CSSProperties) : undefined}
+          >
+            <div
+              className="fc-drawer-grip"
+              onPointerDown={inspectorPanel.onDragStart}
+              onDoubleClick={inspectorPanel.reset}
+              title="拖动移动 · 双击复位"
+            >
+              <Icon name="grip" size={13} />
+            </div>
+            <div className="fc-drawer-body">
+              <Inspector
               node={selectedNode}
               edge={selectedEdge}
               nodes={nodes}
@@ -2555,7 +2583,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
               onAddAnnotation={addAnnotation}
               onUpdateAnnotation={patchAnnotation}
               onDeleteAnnotation={removeAnnotation}
-            />
+              />
+            </div>
           </aside>
         </div>
 

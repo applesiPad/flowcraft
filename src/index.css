@@ -309,6 +309,10 @@ button {
   flex: 1;
   display: flex;
   min-height: 0;
+  position: relative;
+  /* 方案二浮动卡片：画布与两抽屉四周留 12px 间隙，露出应用底色 */
+  padding: 12px;
+  gap: 12px;
 }
 
 .fc-left,
@@ -4401,4 +4405,104 @@ body,
 .fc-preview-debug .fc-chip-btn {
   color: #cbd5e1;
   border-color: rgba(148, 163, 184, 0.35);
+}
+
+/* ============================================================
+   抽屉浮动化（2026-11-04，方案二：实色卡片 + 纯投影）
+   桌面端（>940px）抽屉变成 18px 圆角浮动卡片，去贴边实线；
+   fc-main 的 12px 间隙让画布与应用底色透出。移动端抽屉不回归。
+   ============================================================ */
+@media (min-width: 941px) {
+  .fc-main {
+    /* 覆盖移动端保持 0 的旧预期：桌面统一 12px 间隙 */
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .fc-canvas {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .fc-left,
+  .fc-right {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: none;
+    border-radius: 18px;
+    box-shadow:
+      0 18px 48px rgba(6, 10, 22, 0.16),
+      0 2px 8px rgba(6, 10, 22, 0.08);
+  }
+
+  .fc-left.is-floating,
+  .fc-right.is-floating {
+    position: fixed;
+    z-index: 40;
+    left: var(--panel-x, 12px);
+    top: var(--panel-y, 68px);
+    bottom: auto;
+    height: calc(100vh - 80px);
+    flex-basis: auto;
+    box-shadow:
+      0 28px 70px rgba(0, 0, 0, 0.34),
+      0 4px 14px rgba(0, 0, 0, 0.16);
+  }
+
+  .fc-drawer-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .fc-drawer-grip {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    margin: 2px auto 0;
+    width: 44px;
+    border-radius: 999px;
+    color: var(--fc-muted);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    opacity: 0.55;
+    transition: opacity 140ms ease, background 140ms ease;
+  }
+
+  .fc-drawer-grip:hover {
+    opacity: 1;
+    background: var(--fc-surface-hover);
+  }
+
+  .fc-drawer-grip:active {
+    cursor: grabbing;
+  }
+}
+
+@media (max-width: 940px) {
+  /* 移动端抽屉保持贴边 sheet，无 grip、无间隙 */
+  .fc-main {
+    padding: 0;
+    gap: 0;
+  }
+
+  .fc-drawer-grip {
+    display: none;
+  }
+
+  .fc-left,
+  .fc-right {
+    border-radius: 0;
+    overflow-y: auto;
+    display: block;
+  }
+
+  .fc-drawer-body {
+    overflow: visible;
+  }
 }
