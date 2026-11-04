@@ -928,6 +928,14 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [setNodes, snapshot],
   );
 
+  /** §8-4 标题原地编辑提交：与 Inspector 同一 historyKey（node:…:title），同卡连续编辑合并为一步撤销 */
+  const patchTitle = useCallback(
+    (id: string, title: string) => {
+      patchNodeData(id, { title }, `node:${id}:title`);
+    },
+    [patchNodeData],
+  );
+
   const patchScreen = useCallback(
     (id: string, patch: Partial<ScreenData>, historyKey?: string) => {
       snapshot(historyKey);
@@ -1971,8 +1979,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [canonicalNodes, edges, walkMode, preview],
   );
   const editorCtx = useMemo(
-    () => ({ showHotspots, walkMode, zoom, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints }),
-    [showHotspots, walkMode, zoom, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints],
+    () => ({ showHotspots, walkMode, zoom, preview, patchTitle, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints }),
+    [showHotspots, walkMode, zoom, preview, patchTitle, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints],
   );
   const viewNodes = useMemo(
     () => canonicalNodes.map((n) => (n.id === flashNode ? { ...n, className: "fc-flash" } : n)),

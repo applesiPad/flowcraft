@@ -4682,3 +4682,31 @@ body,
   pointer-events: none;
   white-space: nowrap;
 }
+
+/* ============================================================
+   §8-4 节点标题原地编辑（2026-11-04）
+   双击标题进入 contentEditable；虚线底 + accent 光标表达可编辑，
+   只影响编辑态本身，不改任何既有标题排版。
+   ============================================================ */
+.fc-inline-editing {
+  min-width: 24px;
+  padding: 0 3px;
+  margin: 0 -3px;
+  background: color-mix(in oklab, var(--fc-accent) 12%, transparent);
+  border-radius: 5px;
+  outline: 1.5px dashed color-mix(in oklab, var(--fc-accent) 55%, transparent);
+  outline-offset: 1px;
+  cursor: text;
+  caret-color: var(--fc-accent);
+  white-space: nowrap;
+}
+
+.fc-inline-editing:focus {
+  outline-style: solid;
+}
+
+/* 空标题编辑态仍可点击聚焦 */
+.fc-inline-editing:empty::before {
+  content: "标题";
+  color: var(--fc-muted);
+}

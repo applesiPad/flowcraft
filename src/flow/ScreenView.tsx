@@ -1,5 +1,6 @@
 import { createContext, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "./Icon";
+import { InlineTitle } from "./InlineTitle.tsx";
 import {
   clampMoveBox,
   clampResizeBox,
@@ -30,6 +31,10 @@ export type EditorCtx = {
   showHotspots: boolean;
   walkMode: boolean;
   zoom: number;
+  /** 预览/走查播放器开启中：原地标题编辑等编辑能力全部关死 */
+  preview?: boolean;
+  /** §8-4 节点标题原地编辑提交（App 层 patchNodeData，进撤销栈）；缺省 = 该场景不可编辑 */
+  patchTitle?: (nodeId: string, title: string, historyKey?: string) => void;
   /** 首次拖动元素时，把竖排布局固化为绝对坐标 */
   freezeLayout?: (nodeId: string, boxes: Record<string, ElementBox>) => void;
   moveElement?: (nodeId: string, elId: string, box: ElementBox) => void;
@@ -396,7 +401,9 @@ export function ScreenView({
       </div>
       <div className="fc-navbar">
         <span className="fc-nav-back">‹</span>
-        <span className="fc-nav-title">{data.title}</span>
+        <span className="fc-nav-title">
+          <InlineTitle nodeId={nodeId ?? ""} value={data.title} />
+        </span>
         <span className="fc-nav-more">⋯</span>
       </div>
       <div ref={bodyRef} className={`fc-body${free ? " is-free" : ""}`} style={layout ? { height: layout.height } : undefined}>

@@ -1,6 +1,7 @@
 import { memo, useContext, type MouseEvent as ReactMouseEvent } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Icon } from "./Icon";
+import { InlineTitle } from "./InlineTitle.tsx";
 import { EditorContext, ScreenView } from "./ScreenView";
 import { handleColorOf } from "./edgeColors";
 import type { DecisionData, NoteData, ScreenData } from "./types";
@@ -99,7 +100,7 @@ export const DecisionNode = memo(function DecisionNode({ id, data, selected }: N
     <div className={`fc-node fc-node-decision${selected ? " is-selected" : ""}`}>
       <div className="fc-decision-head">
         <span className="fc-decision-icon"><Icon name="diamond" size={15} /></span>
-        <span>{d.title}</span>
+        <InlineTitle nodeId={id} value={d.title} />
       </div>
       <div className="fc-decision-hint">条件分支</div>
       <Handle id="in" type="target" position={Position.Left} className="fc-handle fc-handle-target" />
@@ -121,13 +122,15 @@ export const DecisionNode = memo(function DecisionNode({ id, data, selected }: N
   );
 });
 
-export const ActionNode = memo(function ActionNode({ data, selected }: NodeProps) {
+export const ActionNode = memo(function ActionNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as { title: string; subtitle?: string };
   return (
     <div className={`fc-node fc-node-action${selected ? " is-selected" : ""}`}>
       <span className="fc-action-icon"><Icon name="bolt" size={16} /></span>
       <div>
-        <div className="fc-action-title">{d.title}</div>
+        <div className="fc-action-title">
+          <InlineTitle nodeId={id} value={d.title} />
+        </div>
         {d.subtitle ? <div className="fc-action-sub">{d.subtitle}</div> : null}
       </div>
       <Handle id="in" type="target" position={Position.Left} className="fc-handle fc-handle-target" />
