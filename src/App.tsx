@@ -33,6 +33,7 @@ import { Inspector } from "./flow/Inspector";
 import { Preview } from "./flow/Preview";
 import { Icon } from "./flow/Icon";
 import { moveElementZ, type ZOrderAction } from "./flow/elementEditor";
+import { applyAlignAction, type AlignAction, type AlignBox } from "./flow/alignDistribute";
 import type { EdgeRouteMode } from "./flow/edgeRouting";
 import { EditorContext } from "./flow/ScreenView";
 import { initialEdges, initialNodes, screenTemplates } from "./flow/sample";
@@ -259,6 +260,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
   const [previewStart, setPreviewStart] = useState<string | null>(null);
   const [selNode, setSelNode] = useState<string | null>(null);
   const [selEdge, setSelEdge] = useState<string | null>(null);
+  /** §8-5 多选集合（onSelectionChange 全量同步），≥2 时浮现对齐/分布工具条 */
+  const [selNodeIds, setSelNodeIds] = useState<string[]>([]);
   const [saved, setSaved] = useState<string>("");
   const [saveFailed, setSaveFailed] = useState(false);
   const [restored, setRestored] = useState(false);
@@ -934,6 +937,39 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
       patchNodeData(id, { title }, `node:${id}:title`);
     },
     [patchNodeData],
+  );
+
+  /** §8-5 多选对齐/等距分布：坐标补丁一次 setNodes，一条撤销记录；无变化的补丁不落盘 */
+  const applyAlignActionToSelection = useCallback(
+    (action: AlignAction) => {
+      if (selNodeIds.length < 2) return;
+      // 尺寸以 DOM 实测为准（裁剪开启时 RF store 的 measured 不总可靠），坐标仍是 flow 系
+      const z = zoom > 0 ? zoom : 1;
+      const domOf = (id: string) => document.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`);
+      const boxes: AlignBox[] = [];
+      for (const id of selNodeIds) {
+        const el = domOf(id);
+        const rect = el?.getBoundingClientRect();
+        if (!el || !rect || rect.width <= 0 || rect.height <= 0) return; // 几何不可得（被裁剪/未挂载），跳过本次
+        boxes.push({
+          id,
+          x: Number(el.style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/)?.[1] ?? (rect.left / z)),
+          y: Number(el.style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/)?.[2] ?? (rect.top / z)),
+          w: rect.width / z,
+          h: rect.height / z,
+        });
+      }
+      const patches = applyAlignAction(boxes, action);
+      if (patches.length === 0) return;
+      snapshot();
+      setNodes((ns) =>
+        ns.map((n) => {
+          const p = patches.find((q) => q.id === n.id);
+          return p ? { ...n, position: { ...n.position, x: p.x, y: p.y } } : n;
+        }),
+      );
+    },
+    [selNodeIds, zoom, setNodes, snapshot],
   );
 
   const patchScreen = useCallback(
@@ -2545,6 +2581,11 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                 const nextNode = sn[0]?.id ?? null;
                 setSelNode(nextNode);
                 setSelEdge(se[0]?.id ?? null);
+                // §8-5 只在集合内容变化时才更新（新数组引用会让 setState 永不 bailout，导致无限循环）
+                setSelNodeIds((prev) => {
+                  const next = sn.map((n) => n.id);
+                  return prev.length === next.length && prev.every((id) => next.includes(id)) ? prev : next;
+                });
                 if (nextNode) setInspectorOpen(true);
               }}
               /* 拖动节点前先存一份快照：否则 Ctrl+Z 回不去，用户会觉得撤销坏了 */
@@ -2655,6 +2696,41 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
             ) : null}
 
             {restored ? <div className="fc-restored">已恢复上次编辑的流程</div> : null}
+
+            {/* §8-5 多选对齐/分布工具条：≥2 选中浮现，bench 下隐藏 */}
+            {!bench && selNodeIds.length >= 2 ? (
+              <div className="fc-align-bar" role="toolbar" aria-label="对齐与分布">
+                {(
+                  [
+                    ["left", "左对齐", "M2 1v14 M5 4h9v2H5z M5 10h6v2H5z"],
+                    ["hcenter", "水平居中", "M8 1v14 M4 4h8v2H4z M5 10h6v2H5z"],
+                    ["right", "右对齐", "M14 1v14 M2 4h9v2H2z M5 10h6v2H5z"],
+                    ["hdist", "水平等距分布", "M2 1v14 M14 1v14 M6.5 6h3v4h-3z"],
+                    ["top", "顶对齐", "M1 2h14 M4 5h2v9H4z M10 5h2v6h-2z"],
+                    ["vcenter", "垂直居中", "M1 8h14 M4 4h2v8H4z M10 5h2v6h-2z"],
+                    ["bottom", "底对齐", "M1 14h14 M4 2h2v9H4z M10 5h2v6h-2z"],
+                    ["vdist", "垂直等距分布", "M1 2h14 M1 14h14 M6 6.5h4v3H6z"],
+                  ] as [AlignAction, string, string][]
+                ).map(([action, label, path]) => {
+                  const disabled = (action === "hdist" || action === "vdist") && selNodeIds.length < 3;
+                  return (
+                    <button
+                      key={action}
+                      type="button"
+                      className="fc-align-btn"
+                      disabled={disabled}
+                      title={disabled ? `${label}（需 ≥3 个选中）` : label}
+                      aria-label={label}
+                      onClick={() => applyAlignActionToSelection(action)}
+                    >
+                      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+                        <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
           <aside

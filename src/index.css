@@ -4710,3 +4710,48 @@ body,
   content: "标题";
   color: var(--fc-muted);
 }
+
+/* ============================================================
+   §8-5 多选对齐 / 等距分布工具条（2026-11-04）
+   Figma 式上下文工具条：≥2 选中浮现于画布顶部居中；2 个选中时分布禁用。
+   ============================================================ */
+.fc-align-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--fc-surface-card);
+  border: 1px solid var(--fc-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.16);
+}
+
+.fc-align-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--fc-label-text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.fc-align-btn:hover:not(:disabled) {
+  background: var(--fc-surface-hover);
+  color: var(--fc-accent);
+}
+
+.fc-align-btn:disabled {
+  color: var(--fc-muted);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
