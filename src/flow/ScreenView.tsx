@@ -35,6 +35,8 @@ export type EditorCtx = {
   preview?: boolean;
   /** §8-4 节点标题原地编辑提交（App 层 patchNodeData，进撤销栈）；缺省 = 该场景不可编辑 */
   patchTitle?: (nodeId: string, title: string, historyKey?: string) => void;
+  /** §8-4 stretch 连线标签原地编辑提交（App 层 patchEdge，进撤销栈）；缺省 = 该场景不可编辑 */
+  patchEdgeLabel?: (edgeId: string, label: string, historyKey?: string) => void;
   /** 首次拖动元素时，把竖排布局固化为绝对坐标 */
   freezeLayout?: (nodeId: string, boxes: Record<string, ElementBox>) => void;
   moveElement?: (nodeId: string, elId: string, box: ElementBox) => void;

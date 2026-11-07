@@ -1,6 +1,17 @@
 export type EdgeLabelPoint = { x: number; y: number };
 export type EdgeLabelSegment = "horizontal" | "vertical" | "diagonal";
 
+/**
+ * §8-4 stretch 连线标签原地编辑：提交净化（纯函数，Node 测试可直跑）。
+ * trim（折叠连续空白）后为空视为放弃（回退原标题）；与原标题相同返回 null（跳过提交）；
+ * 超长截断到 40 字符——连线标签是短触发文案，Inspector 输入框同样受此约束的体验预期。
+ */
+export function sanitizeEdgeLabelInput(raw: string, current: string): string | null {
+  const t = raw.replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!t || t === current) return null;
+  return t;
+}
+
 export type EdgeLabelAnchor = {
   point: EdgeLabelPoint;
   distance: number;

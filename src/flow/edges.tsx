@@ -19,6 +19,7 @@ import {
   polylineLength,
   type EdgeLabelPoint,
 } from "./edgeLabel";
+import { EdgeLabelTitle } from "./EdgeLabelTitle";
 
 // ── 箭头 marker ──────────────────────────────────────────────────────
 
@@ -324,7 +325,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
 
       {/* ── 透明命区域：宽 path，方便点击/悬停选中 ───────────────── */}
       {/* strokeWidth + non-scaling-stroke：命中区恒定 10 屏幕像素，
-          不随 zoom 放大后大范围盖住附近的连接点。 */}
+          不随 zoom 放大后大范围盖住附近的连接点。点击选中由 RF 边组原生处理。 */}
       <path
         d={path}
         fill="none"
@@ -364,7 +365,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
               }}
               title={`${label} ${destination}`}
             >
-              <span className="fc-edge-label-text">{label}</span>
+              <EdgeLabelTitle edgeId={id} value={label} />
               <span
                 className="fc-edge-label-target"
                 aria-label={`\u76EE\u6807\u754C\u9762\uFF1A${targetName || "\u672A\u547D\u540D\u754C\u9762"}`}

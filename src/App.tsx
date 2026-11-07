@@ -1211,6 +1211,14 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     },    [setEdges, snapshot],
   );
 
+  /** §8-4 stretch 连线标签原地编辑提交：与 Inspector 同一 historyKey（edge:…:label），同线连续编辑合并为一步撤销 */
+  const patchEdgeLabel = useCallback(
+    (id: string, label: string) => {
+      patchEdge(id, { label }, `edge:${id}:label`);
+    },
+    [patchEdge],
+  );
+
   const deleteEdge = useCallback(
     (id: string) => {
       snapshot();
@@ -2015,8 +2023,8 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     [canonicalNodes, edges, walkMode, preview],
   );
   const editorCtx = useMemo(
-    () => ({ showHotspots, walkMode, zoom, preview, patchTitle, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints }),
-    [showHotspots, walkMode, zoom, preview, patchTitle, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints],
+    () => ({ showHotspots, walkMode, zoom, preview, patchTitle, patchEdgeLabel, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints }),
+    [showHotspots, walkMode, zoom, preview, patchTitle, patchEdgeLabel, freezeLayout, moveElement, resizeElement, walkHotspot, unlinkedHotspotKeys, deadHints],
   );
   const viewNodes = useMemo(
     () => canonicalNodes.map((n) => (n.id === flashNode ? { ...n, className: "fc-flash" } : n)),

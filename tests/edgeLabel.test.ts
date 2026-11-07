@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  sanitizeEdgeLabelInput,
   chooseEdgeLabelAnchor,
   edgeLabelCardStyle,
   estimateEdgeLabelSize,
@@ -379,4 +380,28 @@ test("createArrowMarker generates unique ids for different colors", () => {
   const marker1 = createArrowMarker("arrow-ff0000", "#ff0000");
   const marker2 = createArrowMarker("arrow-00ff00", "#00ff00");
   assert.notEqual(marker1.id, marker2.id);
+});
+test("连线标签净化：正常文案 trim 后提交", () => {
+  assert.equal(sanitizeEdgeLabelInput("  点击登录  ", "旧文案"), "点击登录");
+});
+
+test("连线标签净化：连续空白折叠为单空格", () => {
+  assert.equal(sanitizeEdgeLabelInput("点击  →   登录", "旧文案"), "点击 → 登录");
+});
+
+test("连线标签净化：纯空白视为放弃（回退原标题）", () => {
+  assert.equal(sanitizeEdgeLabelInput("", "旧文案"), null);
+  assert.equal(sanitizeEdgeLabelInput("   ", "旧文案"), null);
+});
+
+test("连线标签净化：与原标题相同返回 null（跳过提交，不产生撤销记录）", () => {
+  assert.equal(sanitizeEdgeLabelInput("旧文案", "旧文案"), null);
+  assert.equal(sanitizeEdgeLabelInput(" 旧文案 ", "旧文案"), null);
+});
+
+test("连线标签净化：超长截断到 40 字符", () => {
+  const long = "一".repeat(50);
+  assert.equal([...(sanitizeEdgeLabelInput(long, "旧") ?? "")].length, 40);
+  // 截断边界：恰好 40 字符不截
+  assert.equal([...(sanitizeEdgeLabelInput("一".repeat(40), "旧") ?? "")].length, 40);
 });
