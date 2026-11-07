@@ -870,6 +870,12 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
         showToast("只能连到界面的左侧入口 / 判断 / 动作节点");
         return;
       }
+      // Strict 语义补齐（02-对照.md §7.3-2 遗留洞）：从入口锚点（target Handle）反向起线
+      // 没有「从哪里出发」的业务语义，isValidConnection 只查目标端防不住，必须在源头拦。
+      if (connectionState.fromHandle?.type === "target") {
+        showToast("只能从热点 / 分支 / 出口锚点起线，入口锚点不能作为起点");
+        return;
+      }
       // 松手落在卡片主体（不在任何锚点上）时 React Flow 不产生 toNode，
       // 这里按落点反查节点，视为「连到该卡片的入口锚点」，对齐 Figma 的连线手感。
       const point =
@@ -2559,7 +2565,10 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
               edgeTypes={edgeTypes}
               onlyRenderVisibleElements={cull && !renderAllForExport}
               defaultEdgeOptions={{ type: "flow", markerEnd }}
-              connectionMode={ConnectionMode.Loose}
+              // Strict：只认 source Handle → target Handle（02-对照.md §7.3-2 遗留建议落地）。
+              // 业务上所有连线都是「热点/分支/出口 → in 入口」，Strict 挡住
+              // 「从 in 入口反向起线」这类 Loose 残留自由度，isValidConnection 继续做语义校验
+              connectionMode={ConnectionMode.Strict}
               connectionLineComponent={BezierConnectionLine}
               proOptions={{ hideAttribution: true }}
               isValidConnection={isValidConnection}

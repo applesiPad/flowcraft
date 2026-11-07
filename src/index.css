@@ -4485,7 +4485,10 @@ body,
 }
 
 @media (max-width: 940px) {
-  /* 移动端抽屉保持贴边 sheet，无 grip、无间隙 */
+  /* 移动端抽屉保持贴边 sheet，无 grip、无间隙。
+     注意：本块在文件末尾（桌面浮动卡片段之后），display 语义必须与 2220 行的
+     `.fc-left { display:none }`（面板关闭态）保持级联一致——
+     这里只写视觉，不重写 display，否则会把关闭态覆盖回可见（2026-11-07 窄屏实测踩坑）。 */
   .fc-main {
     padding: 0;
     gap: 0;
@@ -4495,8 +4498,14 @@ body,
     display: none;
   }
 
-  .fc-left,
-  .fc-right {
+  .fc-left:not(.fc-left-drawer),
+  .fc-right:not(.is-open) {
+    border-radius: 0;
+    overflow-y: auto;
+  }
+
+  .fc-left.fc-left-drawer,
+  .fc-right.is-open {
     border-radius: 0;
     overflow-y: auto;
     display: block;
