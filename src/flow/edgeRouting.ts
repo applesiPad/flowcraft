@@ -454,25 +454,48 @@ export function buildRouteChain(
 ): { path: string; samples: Point[] } {
   let path = "";
   const samples: Point[] = [];
+  // 连续 straight 段收进同一条带圆角的折线，flush 时一次发出（直角肘形路线不再是硬拐角）。
+  let straightRun: Point[] | null = null;
+  let runStartIndex = 0;
+  const flushRun = (): void => {
+    const points = straightRun;
+    straightRun = null;
+    if (points === null) return;
+    const first = points[0] as Point;
+    path += path === "" ? `M${first.x} ${first.y}` : ` L${first.x} ${first.y}`;
+    path += roundedStraightTail(points);
+    // 不变式校验与标签定位仍按未圆角的折线取点：圆角只往角内收（半径 ≤ 净空距离），
+    // 按折线判定略保守，不会放行穿卡路线。
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1] as Point;
+      const b = points[i] as Point;
+      const count = 16;
+      for (let step = 1; step <= count; step++) {
+        samples.push({
+          x: a.x + ((b.x - a.x) * step) / count,
+          y: a.y + ((b.y - a.y) * step) / count,
+        });
+      }
+    }
+    if (runStartIndex > 0) samples.shift();
+  };
   legs.forEach((leg, index) => {
     const isLast = index === legs.length - 1;
     // 跳过零长度连接段：交接点重合时 L 指令只会产生锯齿
     const zeroLength =
       index > 0 && Math.hypot(leg.from.x - legs[index - 1].to.x, leg.from.y - legs[index - 1].to.y) < 0.5;
     if (leg.straight) {
-      const seg = `L${leg.to.x} ${leg.to.y}`;
-      path = index === 0 ? `M${leg.from.x} ${leg.from.y} ${seg}` : `${path} L${leg.from.x} ${leg.from.y} ${seg}`;
-      const count = 16;
-      const legSamples: Point[] = [];
-      for (let i = 0; i <= count; i++) {
-        legSamples.push({
-          x: leg.from.x + ((leg.to.x - leg.from.x) * i) / count,
-          y: leg.from.y + ((leg.to.y - leg.from.y) * i) / count,
-        });
+      if (straightRun === null) {
+        straightRun = [{ x: leg.from.x, y: leg.from.y }];
+        runStartIndex = index;
       }
-      samples.push(...(index === 0 ? legSamples : legSamples.slice(1)));
+      const last = straightRun[straightRun.length - 1] as Point;
+      if (Math.hypot(leg.to.x - last.x, leg.to.y - last.y) >= 0.5) {
+        straightRun.push({ x: leg.to.x, y: leg.to.y });
+      }
       return;
     }
+    flushRun();
     const bez = getBezierPath(
       leg.from,
       leg.to,
@@ -493,7 +516,36 @@ export function buildRouteChain(
     if (index === 0) samples.push(...legSamples);
     else samples.push(...legSamples.slice(1));
   });
+  flushRun();
   return { path, samples };
+}
+
+/** 直线连跑拐角的圆角半径：不超过相邻两段各自的一半，短段也不会被拐穿。 */
+const CORNER_RADIUS = 12;
+
+/**
+ * 从折点串（首点已在当前画笔位置）发出余下带圆角的路径：每个内部折点收进一段
+ * Q 圆角（改写自 Minglink/dsh-jailbreak-workflow 的 roundedPath）。
+ */
+function roundedStraightTail(points: readonly Point[]): string {
+  let d = "";
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1] as Point;
+    const cur = points[i] as Point;
+    const next = points[i + 1] as Point;
+    const r = Math.min(
+      CORNER_RADIUS,
+      Math.hypot(cur.x - prev.x, cur.y - prev.y) / 2,
+      Math.hypot(next.x - cur.x, next.y - cur.y) / 2,
+    );
+    const inX = cur.x - Math.sign(cur.x - prev.x) * r;
+    const inY = cur.y - Math.sign(cur.y - prev.y) * r;
+    const outX = cur.x + Math.sign(next.x - cur.x) * r;
+    const outY = cur.y + Math.sign(next.y - cur.y) * r;
+    d += ` L${inX} ${inY} Q${cur.x} ${cur.y} ${outX} ${outY}`;
+  }
+  const last = points[points.length - 1] as Point;
+  return `${d} L${last.x} ${last.y}`;
 }
 
 type RouteCandidate = {

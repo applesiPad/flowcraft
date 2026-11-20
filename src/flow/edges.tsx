@@ -20,6 +20,13 @@ import {
   type EdgeLabelPoint,
 } from "./edgeLabel";
 import { EdgeLabelTitle } from "./EdgeLabelTitle";
+import { FlowStreaks } from "./FlowStreaks";
+import {
+  subscribeSelection,
+  selectionVersion,
+  selectionActive,
+  selectionHasNode,
+} from "./selectionSignal";
 
 // ── 箭头 marker ──────────────────────────────────────────────────────
 
@@ -167,6 +174,21 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
 
   const reducedMotion = usePrefersReducedMotion();
 
+  // ── 选中信号：与选中相连的线「活」起来，其余淡下去 ──────────────────
+  // useOnSelectionChange 只在选中变化时发布一次，边在这里的查询都是 O(1)。
+  const selectionTick = useSyncExternalStore(subscribeSelection, selectionVersion, selectionVersion);
+  const linkedToSelection = useMemo(() => {
+    void selectionTick;
+    return (
+      (props.source !== undefined && selectionHasNode(props.source)) ||
+      (props.target !== undefined && selectionHasNode(props.target))
+    );
+  }, [selectionTick, props.source, props.target]);
+  const anySelection = useMemo(() => {
+    void selectionTick;
+    return selectionActive();
+  }, [selectionTick]);
+
   // ── hover state ───────────────────────────────────────────────────
   const [hovered, setHovered] = useState(false);
   const onMouseEnter = useCallback(() => setHovered(true), []);
@@ -207,6 +229,10 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   }, [srcNode, tgtNode, derived, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, props.source, props.target, props.sourceHandleId]);
 
   const path = geometry.path;
+
+  // ── 线的「活性」：选中 / 悬停 / 与选中相连 → 光晕 + 光带；选中存在但与它无关 → 淡化 ──
+  const isActive = hovered || selected || linkedToSelection;
+  const dimmed = anySelection && !isActive;
 
   // ── label position ────────────────────────────────────────────────
   const labelPt = labelPointOnSamples(geometry.samples, laneIndex, laneCount);
@@ -267,73 +293,80 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
 
   return (
     <>
-      {/* ── SVG marker 定义：箭头附着在 path 终点 ─────────────────── */}
-      <defs>
-        <marker
-          id={arrowMarker.id}
-          markerWidth={arrowMarker.markerWidth}
-          markerHeight={arrowMarker.markerHeight}
-          refX={arrowMarker.refX}
-          refY={arrowMarker.refY}
-          orient={arrowMarker.orient}
-          markerUnits="userSpaceOnUse"
-        >
-          <path d={arrowMarker.path} fill={arrowMarker.color} />
-        </marker>
-      </defs>
+      {/* 淡化层：选中存在但与本线无关时整组淡下去（g 只包 SVG 子元素，标签走 EdgeLabelRenderer 不受影响） */}
+      <g className="fc-edge-layer" style={{ opacity: dimmed ? 0.22 : 1 }}>
+        {/* ── SVG marker 定义：箭头附着在 path 终点 ─────────────────── */}
+        <defs>
+          <marker
+            id={arrowMarker.id}
+            markerWidth={arrowMarker.markerWidth}
+            markerHeight={arrowMarker.markerHeight}
+            refX={arrowMarker.refX}
+            refY={arrowMarker.refY}
+            orient={arrowMarker.orient}
+            markerUnits="userSpaceOnUse"
+          >
+            <path d={arrowMarker.path} fill={arrowMarker.color} />
+          </marker>
+        </defs>
 
-      {/* ── 主连线：贝塞尔曲线，marker-end 附着箭头 ───────────────── */}
-      <BaseEdge
-        id={id}
+        {/* ── 活性光晕：垫在主线下方的一道同色宽光晕（选中 / 悬停 / 与选中相连时亮起） ── */}
+        <path
+          d={path}
+          className="fc-edge-halo"
+          fill="none"
+          pointerEvents="none"
+          style={{ stroke: strokeColor, strokeWidth: 10 / screenZoom, opacity: isActive ? 0.16 : 0 }}
+        />
+
+        {/* ── 主连线：贝塞尔曲线，marker-end 附着箭头 ───────────────── */}
+        <BaseEdge
+          id={id}
+          path={path}
+          markerEnd={`url(#${arrowMarker.id})`}
+          style={{
+            stroke: strokeColor,
+            strokeWidth: mainStrokeWidth,
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            opacity: selected ? 1.0 : 0.92,
+            filter: glowFilter,
+            vectorEffect: "non-scaling-stroke",
+          }}
+        />
+
+        {/* ── 起点圆点：标记连接从哪里出发 ───────────────────────────── */}
+        <circle
+          cx={srcPt.x}
+          cy={srcPt.y}
+          r={dotRadius}
+          fill={strokeColor}
+          stroke="var(--fc-edge-anchor-stroke, #fff)"
+          strokeWidth={0.8 / screenZoom}
+          pointerEvents="none"
+        />
+
+        {/* ── 透明命区域：宽 path，方便点击/悬停选中 ───────────────── */}
+        {/* strokeWidth + non-scaling-stroke：命中区恒定 10 屏幕像素，
+            不随 zoom 放大后大范围盖住附近的连接点。点击选中由 RF 边组原生处理。 */}
+        <path
+          d={path}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={10}
+          style={{ cursor: "pointer", vectorEffect: "non-scaling-stroke" }}
+          onMouseEnter={onMouseEnter}
+          onMouseLeave={onMouseLeave}
+        />
+      </g>
+
+      {/* ── 流动光带：线「活」起来时沿数据方向走一串彗尾点（减少动态效果时不上） ── */}
+      <FlowStreaks
         path={path}
-        markerEnd={`url(#${arrowMarker.id})`}
-        style={{
-          stroke: strokeColor,
-          strokeWidth: mainStrokeWidth,
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-          opacity: selected ? 1.0 : 0.92,
-          filter: glowFilter,
-          vectorEffect: "non-scaling-stroke",
-        }}
-      />
-
-      {/* ── 起点圆点：标记连接从哪里出发 ───────────────────────────── */}
-      <circle
-        cx={srcPt.x}
-        cy={srcPt.y}
-        r={dotRadius}
-        fill={strokeColor}
-        stroke="var(--fc-edge-anchor-stroke, #fff)"
-        strokeWidth={0.8 / screenZoom}
-        pointerEvents="none"
-      />
-
-      {/* ── 流动动画小点：沿路线从起点移动到终点（尊重减少动态效果） ── */}
-      {!reducedMotion ? (
-        <circle r={2.5 / screenZoom} fill={strokeColor} opacity={0.9} pointerEvents="none">
-          <animateMotion
-            dur="2s"
-            repeatCount="indefinite"
-            path={path}
-            keyPoints="0;1"
-            keyTimes="0;1"
-            calcMode="linear"
-          />
-        </circle>
-      ) : null}
-
-      {/* ── 透明命区域：宽 path，方便点击/悬停选中 ───────────────── */}
-      {/* strokeWidth + non-scaling-stroke：命中区恒定 10 屏幕像素，
-          不随 zoom 放大后大范围盖住附近的连接点。点击选中由 RF 边组原生处理。 */}
-      <path
-        d={path}
-        fill="none"
-        stroke="transparent"
-        strokeWidth={10}
-        style={{ cursor: "pointer", vectorEffect: "non-scaling-stroke" }}
-        onMouseEnter={onMouseEnter}
-        onMouseLeave={onMouseLeave}
+        color={strokeColor}
+        active={isActive}
+        zoom={screenZoom}
+        reducedMotion={reducedMotion}
       />
 
       {/* ── 标签（仅 selected 时显示） ─────────────────────────────── */}
@@ -422,13 +455,30 @@ export const BezierConnectionLine = memo(function BezierConnectionLine({
   const headR = 3.5 / screenZoom;
   const glowR = 7 / screenZoom;
 
-  const stroke = attached ? color : invalid ? "#94a3b8" : color;
-  const opacity = invalid ? 0.45 : attached ? 1 : 0.85;
+  // 落点悬停在卡面上（不限锚点）也算「能落」：与 App 的落卡兜底管线所见即所得。
+  // 派生几何缓存按 store state 记忆，O(节点数) 的扫描每帧只算一次。
+  const derived = useStore(selectDerivedEdgeFlowState);
+  const overNode = useMemo(
+    () =>
+      derived.nodeGeometries.some(
+        (g) =>
+          g.id !== fromHandle?.nodeId &&
+          toX >= g.x &&
+          toX <= g.x + g.width &&
+          toY >= g.y &&
+          toY <= g.y + g.height,
+      ),
+    [derived, toX, toY, fromHandle],
+  );
+  const attachable = attached || overNode;
+
+  const stroke = attachable ? color : invalid ? "#94a3b8" : color;
+  const opacity = invalid && !overNode ? 0.45 : attachable ? 1 : 0.85;
 
   return (
     <g>
       {/* 吸附合法目标时的柔光晕底 */}
-      {attached ? (
+      {attachable ? (
         <path
           d={bez.path}
           fill="none"
@@ -445,10 +495,10 @@ export const BezierConnectionLine = memo(function BezierConnectionLine({
         strokeWidth={width}
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeDasharray={attached ? "none" : dash}
+        strokeDasharray={attachable ? "none" : dash}
         opacity={opacity}
       >
-        {!reducedMotion && !attached ? (
+        {!reducedMotion && !attachable ? (
           <animate
             attributeName="stroke-dashoffset"
             from="0"
@@ -462,11 +512,11 @@ export const BezierConnectionLine = memo(function BezierConnectionLine({
       <circle
         cx={toX}
         cy={toY}
-        r={attached ? glowR : headR}
-        fill={attached ? stroke : "var(--fc-surface-input, #fff)"}
+        r={attachable ? glowR : headR}
+        fill={attachable ? stroke : "var(--fc-surface-input, #fff)"}
         stroke={stroke}
         strokeWidth={width * 0.9}
-        opacity={invalid ? 0.4 : 0.95}
+        opacity={invalid && !overNode ? 0.4 : 0.95}
       />
     </g>
   );

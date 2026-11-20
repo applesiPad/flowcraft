@@ -28,6 +28,7 @@ import "@xyflow/react/dist/style.css";
 
 import { ActionNode, DecisionNode, NoteNode, ScreenNode } from "./flow/nodes";
 import { FlowEdge, BezierConnectionLine } from "./flow/edges";
+import { publishSelection } from "./flow/selectionSignal";
 import { Palette, type PaletteDragPayload } from "./flow/Palette";
 import { Inspector } from "./flow/Inspector";
 import { Preview } from "./flow/Preview";
@@ -2603,6 +2604,11 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
                   const next = sn.map((n) => n.id);
                   return prev.length === next.length && prev.every((id) => next.includes(id)) ? prev : next;
                 });
+                // 连线活性信号：与选中相连的线亮起、其余淡去（edges.tsx 的 O(1) 查询源）
+                publishSelection(
+                  sn.map((n) => n.id),
+                  se.map((e) => e.id),
+                );
                 if (nextNode) setInspectorOpen(true);
               }}
               /* 拖动节点前先存一份快照：否则 Ctrl+Z 回不去，用户会觉得撤销坏了 */

@@ -798,6 +798,95 @@ button {
   height: 14px !important;
 }
 
+/* ── 拖线连接反馈（借鉴 dsh-jailbreak-workflow 的画布语法）──────────
+   拖线中每张卡经 useConnection 拿到 data-drag（src=起点卡 / on=候落点卡）与
+   这条线的语义色（--fc-drag-color，样式在 nodes.tsx 内联注入，松手即清）：
+   - 起点卡：除起线点（.connectingfrom）外的锚点全部淡去——不能连自己；
+   - 候落点卡：起点类锚点淡去，只留入口点待命；
+   - 指针落进合法入口点（RF 半径内，.valid）：点转拖线色、放大、亮同色光环，
+     整卡亮起同色外圈；
+   - 悬停在卡面任意位置（不限锚点）的落点反馈由连线预览变实线承担
+     （BezierConnectionLine 的卡面命中测试，与落卡兜底管线所见即所得）。 */
+.fc-node[data-drag="src"] .fc-handle:not(.connectingfrom):not(.fc-handle-free) {
+  opacity: 0.15;
+}
+
+.fc-node[data-drag="on"] .fc-handle:not(.fc-handle-target):not(.fc-handle-free) {
+  opacity: 0.25;
+}
+
+.fc-node[data-drag="on"] .fc-handle-target.valid {
+  background: var(--fc-drag-color, #6d7cff) !important;
+  transform: scale(1.5);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--fc-drag-color, #6d7cff) 30%, transparent);
+}
+
+.fc-node[data-drag]:has(.fc-handle-target.valid) {
+  box-shadow:
+    0 0 0 2px var(--fc-drag-color, #6d7cff),
+    0 0 0 7px color-mix(in srgb, var(--fc-drag-color, #6d7cff) 16%, transparent);
+}
+
+/* ── 连线的「活性」：选中 / 悬停 / 与选中相连 ───────────────────────── */
+
+/* 淡化层：选中存在但与本线无关时整组淡下去（edges.tsx 内联给出目标透明度）。 */
+.fc-edge-layer {
+  transition: opacity 160ms linear;
+}
+
+/* 活性光晕：垫在主线下方的一道同色宽光晕，亮起只动 opacity。 */
+.fc-edge-halo {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: opacity 200ms ease;
+}
+
+/* 流动光带（FlowStreaks）：贴着曲线弯的彗尾点，位置全由 WAAPI transform 关键帧给出，
+   里层只管大小和颜色；整组淡入淡出只动 opacity。 */
+.fc-edge-streaks {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--fc-streak, #6d7cff);
+  pointer-events: none;
+  animation: fcStreaksIn 420ms ease-out backwards;
+  transition: opacity 300ms ease-in;
+}
+
+.fc-edge-streaks[data-leaving="true"] {
+  opacity: 0;
+}
+
+/* 路径在连续变：先藏起来（很快），停稳按新的线铺好再淡回来。 */
+.fc-edge-streaks[data-hidden="true"] {
+  opacity: 0;
+  transition-duration: 100ms;
+}
+
+@keyframes fcStreaksIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.fc-edge-streak-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+}
+
+.fc-edge-streak-dot > span {
+  display: block;
+  border-radius: 50%;
+  background: var(--fc-streak, #6d7cff);
+}
+
+/* 光带的头：带一点同色的光晕。 */
+.fc-edge-streak-dot[data-head] > span {
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--fc-streak, #6d7cff) 60%, transparent);
+}
+
 .fc-edge-label {
   font-size: 11px;
   color: var(--fc-label-text);

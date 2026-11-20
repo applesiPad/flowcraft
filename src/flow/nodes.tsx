@@ -1,10 +1,32 @@
-import { memo, useContext, type MouseEvent as ReactMouseEvent } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo, useContext, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { Handle, Position, useConnection, type NodeProps } from "@xyflow/react";
 import { Icon } from "./Icon";
 import { InlineTitle } from "./InlineTitle.tsx";
 import { EditorContext, ScreenView } from "./ScreenView";
 import { handleColorOf } from "./edgeColors";
 import type { DecisionData, NoteData, ScreenData } from "./types";
+
+/**
+ * 拖线信号（借鉴 dsh-jailbreak-workflow 的画布语法）：本卡在拖线中拿到
+ * 「起点卡 / 候落点卡」与这条线的语义色——起点卡淡去其余锚点（不能连自己），
+ * 候落点卡只留入口点待命，合法落点按线色亮起（样式见 index.css 的 data-drag 规则）。
+ * 选择器只取原语：拖线移动期间不重渲染，只在起 / 止各渲染一次。
+ */
+function useDragSignal(id: string): { source: boolean; color: string } | undefined {
+  const dragFrom = useConnection((c) => (c.inProgress ? (c.fromNode?.id ?? null) : null));
+  const dragColor = useConnection((c) => (c.inProgress ? handleColorOf(c.fromHandle?.id ?? null) : ""));
+  if (!dragFrom) return undefined;
+  return { source: dragFrom === id, color: dragColor };
+}
+
+/** 卡片根元素的拖线属性：data-drag 与（候落点时的）--fc-drag-color。 */
+function dragProps(id: string): { dataDrag?: "src" | "on"; dragStyle?: CSSProperties } {
+  const drag = useDragSignal(id);
+  return {
+    dataDrag: drag ? (drag.source ? "src" : "on") : undefined,
+    dragStyle: drag && !drag.source ? ({ "--fc-drag-color": drag.color } as CSSProperties) : undefined,
+  };
+}
 
 export const ScreenNode = memo(function ScreenNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as ScreenData;
@@ -13,9 +35,14 @@ export const ScreenNode = memo(function ScreenNode({ id, data, selected }: NodeP
   // §8-1 死路提示：主按钮没接线 / 完全没有出口时，编辑期直接在卡片上暴露（走查模式除外）
   const hint = walkMode ? undefined : deadHints?.get(id);
   const dead = !!hint && (!hint.hasOut || hint.unwiredPrimary > 0);
+  const drag = dragProps(id);
 
   return (
-    <div className={`fc-node fc-node-screen${selected ? " is-selected" : ""}${walkMode ? " is-walk-node" : ""}${dead ? " is-dead-hint" : ""}`}>
+    <div
+      className={`fc-node fc-node-screen${selected ? " is-selected" : ""}${walkMode ? " is-walk-node" : ""}${dead ? " is-dead-hint" : ""}`}
+      data-drag={drag.dataDrag}
+      style={drag.dragStyle}
+    >
       <div className="fc-node-badge">界面</div>
       {dead ? (
         <div
@@ -96,8 +123,13 @@ export const DecisionNode = memo(function DecisionNode({ id, data, selected }: N
       }),
     );
   };
+  const drag = dragProps(id);
   return (
-    <div className={`fc-node fc-node-decision${selected ? " is-selected" : ""}`}>
+    <div
+      className={`fc-node fc-node-decision${selected ? " is-selected" : ""}`}
+      data-drag={drag.dataDrag}
+      style={drag.dragStyle}
+    >
       <div className="fc-decision-head">
         <span className="fc-decision-icon"><Icon name="diamond" size={15} /></span>
         <InlineTitle nodeId={id} value={d.title} />
@@ -124,8 +156,13 @@ export const DecisionNode = memo(function DecisionNode({ id, data, selected }: N
 
 export const ActionNode = memo(function ActionNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as { title: string; subtitle?: string };
+  const drag = dragProps(id);
   return (
-    <div className={`fc-node fc-node-action${selected ? " is-selected" : ""}`}>
+    <div
+      className={`fc-node fc-node-action${selected ? " is-selected" : ""}`}
+      data-drag={drag.dataDrag}
+      style={drag.dragStyle}
+    >
       <span className="fc-action-icon"><Icon name="bolt" size={16} /></span>
       <div>
         <div className="fc-action-title">
