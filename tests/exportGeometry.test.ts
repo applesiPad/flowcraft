@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Node } from "@xyflow/react";
-import { getExportBounds, prepareNodesForExport, resolveNodeSize } from "../src/flow/exportGeometry.ts";
+import { getExportBounds, prepareNodesForExport, resolveNodeSize } from "../src/flow/export/exportGeometry.ts";
 
 function node(id: string, type: string, x: number, y: number, width?: number, height?: number): Node {
   return {

@@ -1,10 +1,10 @@
 import { memo, useContext, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { Handle, Position, useConnection, type NodeProps } from "@xyflow/react";
-import { Icon } from "./Icon";
+import { Icon } from "../Icon.tsx";
 import { InlineTitle } from "./InlineTitle.tsx";
-import { EditorContext, ScreenView } from "./ScreenView";
-import { handleColorOf } from "./edgeColors";
-import type { DecisionData, NoteData, ScreenData } from "./types";
+import { EditorContext, ScreenView } from "../preview/ScreenView.tsx";
+import { handleColorOf } from "../edges/edgeColors.ts";
+import type { DecisionData, NoteData, ScreenData } from "../types.ts";
 
 /**
  * 拖线信号（借鉴 dsh-jailbreak-workflow 的画布语法）：本卡在拖线中拿到

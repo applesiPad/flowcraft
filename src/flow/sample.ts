@@ -1,5 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
-import type { DecisionData, NoteData, ScreenData, ScreenTemplate } from "./types";
+import type { DecisionData, NoteData, ScreenData, ScreenTemplate } from "./types.ts";
 
 const el = (
   id: string,

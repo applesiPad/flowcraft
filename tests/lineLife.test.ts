@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { measurePath } from "../src/flow/pathSample.ts";
+import { measurePath } from "../src/flow/edges/pathSample.ts";
 import {
   publishSelection,
   selectionActive,
   selectionHasNode,
   selectionVersion,
   subscribeSelection,
-} from "../src/flow/selectionSignal.ts";
-import { buildRouteChain, type RouteLeg } from "../src/flow/edgeRouting.ts";
+} from "../src/flow/edges/selectionSignal.ts";
+import { buildRouteChain, type RouteLeg } from "../src/flow/edges/edgeRouting.ts";
 
 // ── pathSample ───────────────────────────────────────────────────────
 

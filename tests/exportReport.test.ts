@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Edge, Node } from "@xyflow/react";
 import type { Annotation } from "../src/flow/annotations.ts";
-import { buildReportHtml } from "../src/flow/exportReport.ts";
+import { buildReportHtml } from "../src/flow/export/exportReport.ts";
 
 const screenNode = (id: string, title: string, elements: Record<string, unknown>[]): Node => ({
   id,

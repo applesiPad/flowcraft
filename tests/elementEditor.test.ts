@@ -12,7 +12,7 @@ import {
   snapDelta,
   type AlignGuideInput,
   type ContainerRegion,
-} from "../src/flow/elementEditor.ts";
+} from "../src/flow/nodes/elementEditor.ts";
 import type { ElementBox } from "../src/flow/types.ts";
 
 /* ---------- resizeBox：方位角缩放 ---------- */

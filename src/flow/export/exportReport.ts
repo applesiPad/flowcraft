@@ -6,10 +6,10 @@
  * 纯函数（不读 DOM）、Node 测试可直接 import；产物可离线打开、可直接打印。
  */
 import type { Edge, Node } from "@xyflow/react";
-import type { Annotation } from "./annotations.ts";
-import { HEALTH_KIND_LABEL, HEALTH_KIND_ORDER, scanFlowHealth } from "./flowHealth.ts";
-import { normalizeCondition } from "./prototypeLogic.ts";
-import type { DecisionData, ScreenData } from "./types.ts";
+import type { Annotation } from "../annotations.ts";
+import { HEALTH_KIND_LABEL, HEALTH_KIND_ORDER, scanFlowHealth } from "../flowHealth.ts";
+import { normalizeCondition } from "../preview/prototypeLogic.ts";
+import type { DecisionData, ScreenData } from "../types.ts";
 
 export type ReportExport = { html: string; screens: number; links: number; issues: number };
 

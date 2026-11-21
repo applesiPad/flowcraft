@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { edgeLaneIndex, estimateEdgeLabelSize } from "../src/flow/edgeLabel.ts";
-import type { NodeGeometry, Point } from "../src/flow/edgeRouting.ts";
+import { edgeLaneIndex, estimateEdgeLabelSize } from "../src/flow/edges/edgeLabel.ts";
+import type { NodeGeometry, Point } from "../src/flow/edges/edgeRouting.ts";
 import {
   deriveEdgeFlowState,
   laneGroupForEdge,
   laneIndexOfEdge,
   type EdgeFlowStateSnapshot,
-} from "../src/flow/edgeStoreSelectors.ts";
+} from "../src/flow/edges/edgeStoreSelectors.ts";
 
 type EdgeSeed = {
   id: string;

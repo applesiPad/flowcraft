@@ -9,8 +9,8 @@ import {
   packTemplateKeys,
   screenPacks,
   validateScreenPack,
-} from "../src/flow/templatePacks.ts";
-import { packThumbnailSvg, screenThumbnailSvg } from "../src/flow/templateThumbnails.ts";
+} from "../src/flow/templates/templatePacks.ts";
+import { packThumbnailSvg, screenThumbnailSvg } from "../src/flow/templates/templateThumbnails.ts";
 import { screenTemplates } from "../src/flow/sample.ts";
 
 test("内置行业模板包：数量与 id 唯一", () => {

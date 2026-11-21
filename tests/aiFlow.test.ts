@@ -15,7 +15,7 @@ import {
   findBlankAnchor,
   AI_EXAMPLES,
 } from "../src/flow/aiFlow.ts";
-import { buildPackGraph, validateScreenPack, type ScreenPack } from "../src/flow/templatePacks.ts";
+import { buildPackGraph, validateScreenPack, type ScreenPack } from "../src/flow/templates/templatePacks.ts";
 import { screenTemplates } from "../src/flow/sample.ts";
 
 test("AI 切分：箭头/顿号/换行/然后 都能拆成步骤", () => {

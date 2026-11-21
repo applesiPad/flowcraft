@@ -13,7 +13,7 @@ import {
   pointOnPolyline,
   polylineLength,
   type EdgeLabelPoint,
-} from "../src/flow/edgeLabel.ts";
+} from "../src/flow/edges/edgeLabel.ts";
 
 const path: EdgeLabelPoint[] = [
   { x: 0, y: 40 },

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Edge, Node } from "@xyflow/react";
-import { ScreenView } from "./ScreenView";
-import { firstValidationError, namedInputs, normalizeCondition, pickDecisionHandle, resolveFlowTarget } from "./prototypeLogic";
-import { debugVarEntries, formatTrail, varSourceMap, type TrailStep } from "./previewDebug";
-import type { DecisionData, ScreenData } from "./types";
+import { ScreenView } from "./ScreenView.tsx";
+import { firstValidationError, namedInputs, normalizeCondition, pickDecisionHandle, resolveFlowTarget } from "./prototypeLogic.ts";
+import { debugVarEntries, formatTrail, varSourceMap, type TrailStep } from "./previewDebug.ts";
+import type { DecisionData, ScreenData } from "../types.ts";
 
 type Props = {
   nodes: Node[];

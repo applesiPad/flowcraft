@@ -19,7 +19,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EdgeLabelRenderer } from "@xyflow/react";
-import { measurePath, type MeasuredPath } from "./pathSample";
+import { measurePath, type MeasuredPath } from "./pathSample.ts";
 
 /** 一条线上最多几道光带；短线只放一道。 */
 const MAX_STREAKS = 2;

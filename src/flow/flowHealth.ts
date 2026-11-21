@@ -17,7 +17,7 @@
  */
 import type { Edge, Node } from "@xyflow/react";
 import type { DecisionData, ScreenData } from "./types.ts";
-import { normalizeCondition } from "./prototypeLogic.ts";
+import { normalizeCondition } from "./preview/prototypeLogic.ts";
 
 export type HealthIssueKind =
   | "deadEnd"

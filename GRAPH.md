@@ -1,18 +1,15 @@
 # FlowCraft 项目导航图
 
-> 面向开发和维护的“找东西”索引。产品说明看 [README.md](./README.md)。
-> 最后更新：2026-11-02
+> 面向开发和维护的「找东西」索引。产品说明看 [README.md](./README.md)，四类主文档看 [docs/README.md](./docs/README.md)。
+> 最后更新：2026-11-21
 
 ## 1. 项目速览
 
 - 技术栈：React 19 + TypeScript + `@xyflow/react` + Vite
 - 入口：`src/main.tsx` → `src/App.tsx`
-- 数据：流程、批注和自定义模板存 `localStorage`，同时支持 JSON 导入/导出
-- 开发：`npm run dev -- --port 5177`
-- 构建：`npm run build`
-- 测试：`npm test`
-- 检查：`npm run lint`
-- Git 仓库：已初始化（`master`），改动前后各提交一次即可回滚
+- 数据：流程、批注、模板、画布与快照存 `localStorage`，JSON 导入/导出（`version: 3`，兼容 v1/v2 迁移）
+- 开发：`npm run dev -- --port 5177`；构建 `npm run build`；测试 `npm test`（269/269）；检查 `npm run lint`
+- Git：分支 `main`，远程 `origin`（github.com/applesiPad/flowcraft）
 
 ## 2. 目录与模块
 
@@ -20,209 +17,155 @@
 flowcraft/
 ├─ src/
 │  ├─ main.tsx                 应用启动（刻意不启用 StrictMode）
-│  ├─ App.tsx                  工作台、画布状态、快捷键、导入导出、批注/模板/画布接线
-│  ├─ index.css                全局样式：编辑器、原型、画布/快照/体检面板
+│  ├─ App.tsx                  工作台：画布状态、快捷键、导入导出、面板接线（~2900 行，拆分见待办）
+│  ├─ index.css                全局样式：编辑器、原型、画布/连线/面板（~4800 行）
 │  └─ flow/
-│     ├─ Icon.tsx            13 类界面元素图标
-│     ├─ Inspector.tsx       节点/连线/元素编辑、条件与校验编辑、批注面板
-│     ├─ Palette.tsx         模板市场、行业模板包、搜索/分类、缩略图
-│     ├─ Preview.tsx         全屏原型预览播放器（输入/校验/分支/动效）
-│     ├─ ScreenView.tsx      画布内高保真界面渲染与走查交互
-│     ├─ annotations.ts      批注数据模型、校验、增删改、解析与统计
-│     ├─ aiFlow.ts           AI 助手 MVP：文本 → 流程规划 → ScreenPack + 空白锚点 + 补线建议
-│     ├─ benchGraph.ts       性能基线合成大图（?bench=…）+ 页内指标
-│     ├─ canvasStore.ts      多画布存储：列表/活动 id/数据键、legacy 迁移
-│     ├─ edgeLabel.ts        边标签尺寸、lane 依据与对端分组
-│     ├─ edgeRouting.ts      贝塞尔曲线 + 通用路由（候选生成 + 线不穿卡不变式）
-│     ├─ edgeStoreSelectors.ts边共享派生状态（WeakMap 一次派生）
-│     ├─ edges.tsx           自定义 FlowEdge：标签、回边、手动通道
-│     ├─ elementEditor.ts    元素拖拽/缩放/吸附/容器钳制
-│     ├─ exportCanvas.ts     PNG / SVG / PDF 画布导出
-│     ├─ exportFile.ts       JSON / 文本下载
-│     ├─ exportGeometry.ts   节点尺寸解析与导出包围盒
-│     ├─ exportHtml.ts       单文件 HTML 原型导出（内嵌播放器）
-│     ├─ exportLayout.ts     视口适配、PDF 排版、文件名
-│     ├─ exportReport.ts     评审报告导出（HTML 格式，含界面/连线/判断/批注/体检）
-│     ├─ exportTypes.ts      画布导出选项与结果类型
-│     ├─ flowHealth.ts       流程健康检查：四类缺陷扫描 + 条件变量对账 + 无名界面检测
-│     ├─ history.ts          增量撤销/重做快照
-│     ├─ nodes.tsx           Screen / Decision / Action / Note 节点渲染
-│     ├─ noteLayout.ts       备注锚定、旧存档迁移、级联删除
-│     ├─ previewDebug.ts     预览调试面板：变量表 + 走查轨迹
-│     ├─ prototypeLogic.ts   原型逻辑共享模块：条件求值/输入校验/跳转解析
-│     ├─ qaProbe.ts          QA 探针：window.__fcQA 自动化验收接口
-│     ├─ sample.ts           电商示例与 6 种内置界面模板
-│     ├─ schemaMigrate.ts    Schema 版本迁移与导入校验
-│     ├─ snapshotStore.ts    版本快照存储 + 结构化 diff
-│     ├─ templateMarket.ts   模板校验、搜索、去重、Bundle 导入导出
-│     ├─ templatePacks.ts    内置行业模板包定义与实例化
-│     ├─ templateThumbnails.ts模板/模板包 SVG 缩略图（纯函数）
-│     ├─ theme.ts            深浅主题与边框颜色
-│     ├─ types.ts            核心数据结构（含条件/校验/备注锚点）
-├─ tests/                      23 个 Node 测试文件（与 src/flow 模块一一对应 + 几何/导出布局专项）
-├─ docs/                       截图、性能基线、协作方案设计与进度记录
+│     ├─ edges/                连线子系统
+│     │  ├─ edgeRouting.ts       通用候选路由 v2：候选生成 + 线不穿卡不变式 + 打分 + Q 圆角
+│     │  ├─ edges.tsx            FlowEdge（光晕/淡化/标签/光带）+ BezierConnectionLine（拖线预览 + 卡面命中）
+│     │  ├─ FlowStreaks.tsx      彗尾流动光带（WAAPI，只在边「活」时挂载）
+│     │  ├─ pathSample.ts        SVG path 纯 JS 弧长采样（不走 getTotalLength）
+│     │  ├─ edgeColors.ts        语义配色单一来源（点=线=箭头同色）
+│     │  ├─ edgeLabel.ts         标签尺寸估算、箭头 marker、lane 锚点
+│     │  ├─ edgeStoreSelectors.ts 边共享派生状态（WeakMap 一帧全图一次派生）
+│     │  ├─ selectionSignal.ts   选中信号（onSelectionChange 发布，边 O(1) 查询）
+│     │  └─ EdgeLabelTitle.tsx   连线标签原地编辑（双击改触发文案）
+│     ├─ nodes/                节点子系统
+│     │  ├─ nodes.tsx            Screen / Decision / Action / Note 节点 + 拖线信号（data-drag）
+│     │  ├─ InlineTitle.tsx      标题原地编辑组件（与 inlineTitle.ts 成对，注意大小写）
+│     │  ├─ inlineTitle.ts       标题输入清洗纯函数
+│     │  └─ elementEditor.ts     元素拖拽/缩放/吸附/容器钳制
+│     ├─ preview/              原型预览与走查
+│     │  ├─ Preview.tsx          全屏播放器（变量/校验/分支/动效）
+│     │  ├─ ScreenView.tsx       画布内高保真界面渲染 + EditorContext（走查/排版/起线）
+│     │  ├─ prototypeLogic.ts    条件求值/输入校验/跳转解析（预览与导出播放器共用）
+│     │  └─ previewDebug.ts      预览调试面板：变量表 + 走查轨迹
+│     ├─ export/               导出系列
+│     │  ├─ exportCanvas.ts      PNG / SVG / PDF（动态 import，离屏全量渲染）
+│     │  ├─ exportHtml.ts        单文件 HTML 原型（内嵌播放器 + 运行时求值）
+│     │  ├─ exportReport.ts      评审报告（HTML，含界面/连线/判断/批注/体检）
+│     │  ├─ exportGeometry.ts    节点尺寸与导出包围盒
+│     │  ├─ exportLayout.ts      视口适配 / PDF 排版 / 文件名
+│     │  ├─ exportFile.ts        JSON / 文本下载
+│     │  └─ exportTypes.ts       导出选项与结果类型
+│     ├─ templates/            模板体系
+│     │  ├─ templateMarket.ts    校验、搜索、去重、Bundle 导入导出
+│     │  ├─ templatePacks.ts     3 个内置行业模板包定义与实例化
+│     │  └─ templateThumbnails.ts 模板/包 SVG 缩略图（纯函数，防注入）
+│     ├─ Icon.tsx              13 类界面元素图标
+│     ├─ Inspector.tsx         节点/连线/元素/条件/批注属性面板
+│     ├─ Palette.tsx           模板市场面板（搜索/分类/缩略图/导入导出）
+│     ├─ aiFlow.ts             AI 助手 MVP：文本 → 流程规划 → ScreenPack（接远程 LLM 只换 planFlowFromText）
+│     ├─ alignDistribute.ts    多选对齐/等距分布纯几何
+│     ├─ annotations.ts        批注数据模型与增删改
+│     ├─ benchGraph.ts         性能基线合成大图（?bench=…）
+│     ├─ canvasStore.ts        多画布存储与 legacy 迁移
+│     ├─ flowHealth.ts         流程健康检查（四类缺陷 + 条件变量对账）
+│     ├─ history.ts            增量撤销/重做快照
+│     ├─ noteLayout.ts         备注锚定、旧档迁移、级联删除
+│     ├─ qaProbe.ts            QA 探针 window.__fcQA
+│     ├─ sample.ts             医院示例图 + 6 种内置界面模板
+│     ├─ schemaMigrate.ts      Schema v1→v3 迁移链与导入校验
+│     ├─ snapshotStore.ts      版本快照存储 + 结构化 diff
+│     ├─ theme.ts              深浅主题与边框颜色
+│     └─ types.ts              核心数据结构（含条件/校验/备注锚点）
+├─ tests/                      24 个 Node 测试文件（node --test，导入需带 .ts 扩展名）
+├─ docs/                       文档（四类主子结构，入口 docs/README.md）
 ├─ public/                     favicon 与图标资源
 └─ vite.config.ts / tsconfig*.json / package.json
 ```
+
+约定：`src/flow` 内部互引带 `.ts/.tsx` 扩展名（node --test 的 ESM 解析需要）；App.tsx 引 flow 模块不带扩展名（Vite）。`InlineTitle.tsx` 与 `inlineTitle.ts` 是 Windows 大小写不敏感文件系统上的同名对，**导入时必须写全扩展名**。
 
 ## 3. 运行时数据流
 
 ```mermaid
 graph TD
-    LS[(localStorage)] -->|恢复流程/批注/模板| APP[App.tsx / CanvasApp]
+    LS[(localStorage)] -->|恢复流程/批注/模板/画布| APP[App.tsx]
     SAMPLE[sample.ts] -->|首次启动| APP
-    APP -->|节点数据| NODES[nodes.tsx]
-    APP -->|连线数据| EDGES[edges.tsx]
+    APP -->|onSelectionChange| SIGNAL[selectionSignal.ts]
+    SIGNAL -->|version 订阅| EDGES[edges/edges.tsx]
+    APP -->|节点数据| NODES[nodes/nodes.tsx]
+    NODES -->|useConnection 拖线信号| NODES
     STORE[(React Flow store)] -->|WeakMap 一次派生| DERIVED[edgeStoreSelectors.ts]
-    DERIVED -->|zoom / lane 分组 / 节点几何 / 可视区| EDGES
-    NODES -->|热点 Handle| CANVAS[React Flow 画布]
-    EDGES -->|几何输入| ROUTE[edgeRouting.ts]
-    ROUTE -->|候选路线 + 不变式过滤| PATH[多段贝塞尔 path]
-    CACHE -->|缓存命中/未命中结果| EDGES
-    EDGES -->|SVG Path + 标签| CANVAS
-    APP -->|备注锚点/旧存档| NOTELAYOUT[noteLayout.ts]
-    NOTELAYOUT -->|按目标位置计算| NODES
-    APP -->|选中对象| INSPECT[Inspector.tsx]
-    INSPECT -->|批注| ANNOT[annotations.ts]
-    INSPECT -->|编辑节点/边/元素| APP
-    APP -->|增量快照| HISTORY[history.ts]
-    APP -->|预览| PREVIEW[Preview.tsx]
-    APP -->|模板数据| MARKET[templateMarket.ts]
-    MARKET -->|搜索/分类/去重| PALETTE[Palette.tsx]
-    APP -->|导出原型| HTML[exportHtml.ts]
-    APP -->|导出 JSON| JSON[exportFile.ts]
-    APP -->|动态加载| EXPORT[exportCanvas.ts]
-    EXPORT -->|尺寸/包围盒| GEOM[exportGeometry.ts]
-    EXPORT -->|排版/文件名| LAYOUT[exportLayout.ts]
-    EXPORT -->|PNG / SVG / PDF| DOWNLOAD[浏览器下载]
+    DERIVED -->|zoom / lane / 节点几何 / 可视区| EDGES
+    EDGES -->|几何输入| ROUTE[edgeRouting.ts 候选路由 v2]
+    ROUTE -->|多段贝塞尔 + Q 圆角 path| EDGES
+    EDGES -->|path 字符串| STREAKS[FlowStreaks.tsx 弧长采样 + WAAPI]
+    EDGES -->|SVG + 标签 + 光带| CANVAS[React Flow 画布]
+    NODES -->|热点 Handle| CANVAS
+    APP -->|预览| PREVIEW[preview/Preview.tsx]
+    PREVIEW -->|条件/校验| LOGIC[preview/prototypeLogic.ts]
+    APP -->|导出原型| HTML[export/exportHtml.ts]
+    APP -->|PNG/SVG/PDF| CANVASEXP[export/exportCanvas.ts]
+    HTML --> LOGIC
 ```
 
 ## 4. 核心功能索引
 
-### 节点系统
+### 连线系统
 
 | 你要找什么 | 文件 | 关键符号 |
 | --- | --- | --- |
-| 数据结构 | `src/flow/types.ts` | `ScreenData`、`ScreenElement`、`ScreenTemplate` |
-| 节点外观 | `src/flow/nodes.tsx` | `ScreenNode`、`DecisionNode`、`ActionNode`、`NoteNode` |
-| 备注锚定与迁移 | `src/flow/noteLayout.ts` | `noteAnchorFor`、`anchorNotePosition`、`migrateLegacyNoteAnchors`、`layoutAnchoredNotes`、`cascadeDeleteNode` |
-| 初始示例 | `src/flow/sample.ts` | `initialNodes`、`initialEdges`、`screenTemplates` |
-| 左侧面板/模板市场 | `src/flow/Palette.tsx` | `Palette`、搜索、分类、导入/导出 |
-| 属性编辑/批注 | `src/flow/Inspector.tsx` | `Inspector`、`AnnotationPanel` |
+| 路由（候选生成/不变式/打分） | `src/flow/edges/edgeRouting.ts` | `computeEdgeEndpoints`、`generateCandidates`、`buildRouteChain`、`roundedStraightTail` |
+| 边组件（光晕/淡化/标签/箭头） | `src/flow/edges/edges.tsx` | `FlowEdge`、`BezierConnectionLine` |
+| 流动光带 | `src/flow/edges/FlowStreaks.tsx` | `FlowStreaks`、`pathSample.ts` 的 `measurePath` |
+| 选中活性信号 | `src/flow/edges/selectionSignal.ts` | `publishSelection`、`selectionActive`、`selectionHasNode` |
+| 语义配色 | `src/flow/edges/edgeColors.ts` | `handleColorOf`（yes/no/动词分类/稳定哈希） |
+| 标签与箭头 | `src/flow/edges/edgeLabel.ts` | `estimateEdgeLabelSize`、`createArrowMarker`、`pointOnPolyline` |
+| 共享派生状态 | `src/flow/edges/edgeStoreSelectors.ts` | `deriveEdgeFlowState`、`laneGroupForEdge`、`laneIndexOfEdge` |
+| 连线标签原地编辑 | `src/flow/edges/EdgeLabelTitle.tsx` | `EdgeLabelTitle`（与 Inspector 同键合并撤销） |
+| 拖线合法性 | `src/App.tsx` | `isValidConnection`、`onConnectEnd`（落卡兜底）、Strict 模式 |
+| 设计与验收结论 | `docs/方案设计/连线系统设计.md` | —— |
 
-### 连线系统（P0-1 已完成）
+### 节点与画布交互
 
 | 你要找什么 | 文件 | 关键符号 |
 | --- | --- | --- |
-| 边组件 | `src/flow/edges.tsx` | `FlowEdge`、`roundedPath`、`pointOnPolyline` |
-| 连线路由 | `src/flow/edgeRouting.ts` | `computeEdgeEndpoints`（候选生成 + 不变式过滤）、`getBezierPath` |
-| 正交避障 | `src/flow/edgeRouting.ts` | `smartEdgeRoute`、`routeAroundNodes` |
-| 自动回边平衡 | `src/flow/edgeRouting.ts` | `createBalancedBackEdgePath` |
-| 手动回边通道 | `src/flow/edgeRouting.ts` | `createBackEdgeLanePath`、`normalizeEdgeRouteMode` |
-| 连线二次编辑 | `src/flow/Inspector.tsx` / `App.tsx` | 出发热点、`routeMode`、`patchEdge` |
-| 路由缓存 | 已移除（v2 通用路由不再需要，见 2026-11-03 重构记录） |
-| 边共享派生状态 | `src/flow/edgeStoreSelectors.ts` | `deriveEdgeFlowState`、`selectDerivedEdgeFlowState`、`laneGroupForEdge`、`laneIndexOfEdge` |
-| 回归测试 | `tests/edgeRouting.test.ts`、`tests/edgeStoreSelectors.test.ts` | 单障碍、多障碍、分支语义圆点、随机场景性质测试（线不穿卡）、lane 分组、派生缓存命中 |
-| AI 助手测试 | `tests/aiFlow.test.ts` | 文本切分、模板/场景词典、decision 回边、ScreenPack 校验与实例化、布局不重叠、空白锚点、补线建议 |
+| 节点渲染 + 拖线信号 | `src/flow/nodes/nodes.tsx` | `ScreenNode`、`DecisionNode`、`ActionNode`、`NoteNode`、`useDragSignal`/`dragProps` |
+| 标题原地编辑 | `src/flow/nodes/InlineTitle.tsx` + `inlineTitle.ts` | `InlineTitle`、`sanitizeTitleInput` |
+| 元素拖拽/缩放/钳制 | `src/flow/nodes/elementEditor.ts` | `clampMoveBox`、`clampResizeBox`、`moveElementZ` |
+| 画布内界面渲染与走查 | `src/flow/preview/ScreenView.tsx` | `EditorContext`、`ScreenView` |
+| 多选对齐/分布 | `src/flow/alignDistribute.ts` | `applyAlignAction` |
+| 备注锚定与迁移 | `src/flow/noteLayout.ts` | `noteAnchorFor`、`migrateLegacyNoteAnchors`、`cascadeDeleteNode` |
+| 批注 | `src/flow/annotations.ts` + `src/flow/Inspector.tsx` | `createAnnotation`、`AnnotationPanel` |
+| 撤销/重做 | `src/flow/history.ts` | 增量快照栈 |
+| 深浅主题 | `src/flow/theme.ts` | 主题切换写 `data-theme` |
 
-实现要点：
-
-1. `edges.tsx` 通过 `selectDerivedEdgeFlowState` 取共享派生状态：zustand 每次更新产生新 state 对象，`deriveEdgeFlowState` 结果按该对象存 WeakMap，同一帧内所有边共用一次派生（节点几何 O(N)、lane 分组 O(E log E)、可视区、对端标签尺寸数组）；每边只做 Map/O(1) 查询，取代旧版每边 5 个 store selector 的 O(E×N) 扫描。
-2. 排除连线的 source/target 节点，其余节点按 22px 安全边距生成 AABB（`derived.avoidRects(excludeNodeId)` 按目标节点记忆化）。
-3. 直线无碰撞时继续使用 `getSmoothStepPath`，保持原有观感。
-4. 直线有碰撞时，以起点、终点及所有障碍边界组成压缩网格，用带转向惩罚的 A* 找正交路径。
-5. 多障碍仍无解时，使用所有障碍并集外框的保守绕行兜底。
-6. 自动回边使用 `createBalancedBackEdgePath`：同列/近列且上下相邻的短闭环走局部下通道，把小回路和主流程分开；其余远距离回退保持 A* 最短避障，避免旧版全局底部绕行。
-7. 折线路径用圆角拐弯渲染；主边使用自定义终点箭头，默认降低文字噪声，选中连线后才显示文字标签与目标 chip。
-8. 非局部通道的回边和前向边通过 `routeWithCache` 复用结果；键包含端点、节点几何、排除节点、边距。
-
-### 批注（P2 已完成）
+### 预览 / 原型逻辑
 
 | 能力 | 文件 / 符号 |
 | --- | --- |
-| 数据模型、校验、增删改 | `src/flow/annotations.ts` / `Annotation`、`createAnnotation`、`updateAnnotation`、`deleteAnnotation` |
-| 解析与统计 | `src/flow/annotations.ts` / `parseAnnotations`、`getAnnotationStats` |
-| 节点/连线批注面板 | `src/flow/Inspector.tsx` / `AnnotationPanel` |
-| 本地持久化 | `App.tsx` / `ANNOTATION_STORAGE_KEY` |
-| JSON 导出 | `App.tsx` / `version: 2` + `annotations` |
-| 关联清理 | 删除节点/连线/热点时同步删除批注 |
+| 全屏播放器 | `src/flow/preview/Preview.tsx`（变量表、校验拦截、分支 toast、动效） |
+| 共享求值器 | `src/flow/preview/prototypeLogic.ts` / `evaluateCondition`、`pickDecisionHandle`、`validateInputValue` |
+| 调试面板 | `src/flow/preview/previewDebug.ts`（变量表 + 走查轨迹） |
+| 导出播放器（同语义） | `src/flow/export/exportHtml.ts` / `buildPrototypeHtml` |
 
-### 模板市场（P2 已完成，当前为本地模板库）
+### 面板 / 模板 / AI
 
 | 能力 | 文件 / 符号 |
 | --- | --- |
-| 模板校验与深拷贝 | `src/flow/templateMarket.ts` / `validateTemplate`、`normalizeTemplate`、`cloneTemplateForInsert` |
-| 搜索与分类 | `src/flow/templateMarket.ts` / `filterTemplates`、`templateCategory` |
-| 去重合并 | `src/flow/templateMarket.ts` / `mergeTemplates` |
-| 导入/导出 | `src/flow/templateMarket.ts` / `buildTemplateBundle`、`parseTemplateBundle` |
-| 面板交互 | `src/flow/Palette.tsx` / 搜索、分类、导入、导出、空态 |
-| 本地持久化 | `App.tsx` / `TEMPLATE_STORAGE_KEY` |
+| 属性面板 | `src/flow/Inspector.tsx`（节点/连线/元素/条件/批注） |
+| 模板市场 | `src/flow/Palette.tsx` + `src/flow/templates/templateMarket.ts`（`filterTemplates`、`mergeTemplates`、`buildTemplateBundle`） |
+| 行业模板包 | `src/flow/templates/templatePacks.ts`（`screenPacks`、`buildPackGraph`） |
+| 缩略图 | `src/flow/templates/templateThumbnails.ts`（纯函数 SVG） |
+| AI 助手 | `src/flow/aiFlow.ts`（`planFlowFromText`、`buildAiPack`、`findBlankAnchor`、`suggestWires`） |
+| 图标 | `src/flow/Icon.tsx` |
 
-### 多画布 / 快照 / 体检（2026-11-02 完成）
-
-| 能力 | 文件 / 符号 |
-| --- | --- |
-| 画布存储与迁移 | `src/flow/canvasStore.ts` / `ensureCanvases`（legacy 零拷贝登记）、`readCanvasData`、`writeCanvasData`、`uniqueCanvasName` |
-| 画布操作 | `src/App.tsx` / `switchCanvas`（切换前自动快照）、`createCanvas`、`renameCanvas`、`duplicateCanvas`、`deleteCanvas`（两步确认） |
-| 画布切换器 UI | `src/App.tsx` 顶栏 / `.fc-canvas-toggle` + portal 面板 |
-| 快照存储 | `src/flow/snapshotStore.ts` / `addSnapshot`（≤30 裁剪）、`readSnapshots`、`removeSnapshot` |
-| 流程对比 | `src/flow/snapshotStore.ts` / `diffFlows`（界面增删/改名、连线增删、元素/条件/批注变化，可读文案） |
-| 快照面板 UI | `src/App.tsx` / `.fc-snap-panel`（拍摄 / 对比 / 恢复 / 删除；恢复前自动存快照） |
-| 健康检查 | `src/flow/flowHealth.ts` / `scanFlowHealth`（四类问题，按类型分组）；`src/App.tsx` / `.fc-health-panel`，点击定位节点 |
-
-约定：`flowcraft.flow.v1` 始终是活动画布的镜像；切换画布 = 归档当前数据到 `canvas.data.<旧id>` + 自动快照 + 读入目标数据。画布上限 20、快照上限 30。
-
-### 原型逻辑（2026-11-02 完成：条件求值 / 输入校验 / 切换动效）
+### 平台能力（多画布 / 快照 / 体检 / 导出）
 
 | 能力 | 文件 / 符号 |
 | --- | --- |
-| 共享求值器（纯函数） | `src/flow/prototypeLogic.ts` / `evaluateCondition`、`pickDecisionHandle`、`resolveFlowTarget`、`validateInputValue`、`firstValidationError`、`namedInputs` |
-| 条件与校验数据类型 | `src/flow/types.ts` / `ConditionSpec`、`InputValidation`（`DecisionData.condition`、`ScreenElement.name/validation`） |
-| 属性面板编辑 | `src/flow/Inspector.tsx` / 判断节点「原型求值」区块；输入元素的变量名 + 校验规则 |
-| 预览接线 | `src/flow/Preview.tsx` / `vars` 变量表、输入收集、校验拦截、分支 toast、方向动效 |
-| 可输入元素渲染 | `src/flow/ScreenView.tsx` / `inputValues`、`onInputChange`、`errorElIds`（预览下带变量名的 input 渲染为真实输入框） |
-| 导出播放器 | `src/flow/exportHtml.ts` / 拓扑直出 + 运行时求值（`evalCond`/`resolveTarget` 与 TS 同语义），`window.__fcDebug` QA 钩子 |
-
-实现要点：预览与导出播放器共用 `prototypeLogic.ts` 的语义；导出时不再预解析判断穿透，而是把原始拓扑 + 条件交给播放器运行时求值，保证两边行为一致。变量取自各界面「有变量名的输入框」，跨界面累积；判断节点无条件时默认走「是」。
-
-### 模板缩略图与行业模板包（2026-11-02 完成）
-
-| 能力 | 文件 / 符号 |
-| --- | --- |
-| SVG 缩略图（纯函数） | `src/flow/templateThumbnails.ts` / `templateThumbSvg`（内置模板迷你界面投影） |
-| 行业模板包定义 | `src/flow/templatePacks.ts` / `screenPacks`（电商下单 / 外卖点单 / 员工入职） |
-| 包静态校验 | `src/flow/templatePacks.ts` / `validateScreenPack`、`packMetrics` |
-| 包实例化 | `src/flow/templatePacks.ts` / `buildPackGraph`（一次快照整体插入、可撤销） |
-| 调色板展示 | `src/flow/Palette.tsx` / 包卡片、缩略图、点击居中插入、拖入画布 |
-| 插入接线 | `src/App.tsx` / `insertPack`、`addAtCenter`、`onDrop` |
-| AI 助手（MVP） | `src/flow/aiFlow.ts` / `planFlowFromText`（文本→步骤链）、`buildAiPack`（→ScreenPack）、`findBlankAnchor`（空白插入锚点）、`suggestWires`（死路补线建议）；`src/App.tsx` / `.fc-ai-panel` + `insertAiPack`、`acceptWireSuggestion` |
-
-### 导出
-
-| 能力 | 文件 / 符号 |
-| --- | --- |
-| PNG / SVG / PDF | `src/flow/exportCanvas.ts` / `exportCanvas` |
-| 导出类型 | `src/flow/exportTypes.ts` / `CanvasExportOptions`、`CanvasExportResult` |
-| 节点尺寸与包围盒 | `src/flow/exportGeometry.ts` / `resolveNodeSize`、`getExportBounds` |
-| 视口 / PDF 排版 / 文件名 | `src/flow/exportLayout.ts` / `computeFitViewport`、`computePdfPlacement`、`buildExportFilename` |
-| JSON 导入导出 | `src/flow/exportFile.ts` + `App.tsx` |
-| 单文件 HTML 原型 | `src/flow/exportHtml.ts` / `buildPrototypeHtml` |
-| 裁剪下导出/打印保护 | `src/App.tsx` / `withFullRender`（克隆 DOM 前临时全量渲染并等待 measured） |
-
-导出实现注意：外层 `.fc-export-stage` 负责离屏，内层 `.fc-export-clone` 必须保持相对定位。不要改回“克隆节点自身 fixed”，否则 Chromium 会生成空白 PNG。
-
-### 交互与状态
-
-| 能力 | 文件 / 符号 |
-| --- | --- |
-| 画布状态、拖放、连线、快捷键 | `src/App.tsx` / `CanvasApp` |
-| 可视区裁剪开关（默认开） | `src/App.tsx` / `cull`、`CULL_STORAGE_KEY`、`.fc-cull-toggle` |
-| 画布内走查 | `src/flow/ScreenView.tsx` / `EditorContext` |
-| 全屏预览 | `src/flow/Preview.tsx` / `Preview` |
-| 撤销 / 重做 | `src/flow/history.ts` |
-| 本地持久化 | `App.tsx` / `STORAGE_KEY`、`TEMPLATE_STORAGE_KEY`、`ANNOTATION_STORAGE_KEY` |
-| 备注关联与旧档迁移 | `src/flow/noteLayout.ts` + `src/flow/sample.ts` |
-| 窄屏资源库/属性抽屉 | `src/App.tsx` / `paletteOpen`、`inspectorOpen` + `src/index.css` 的 940/620 断点 |
+| 多画布存储 | `src/flow/canvasStore.ts` / `ensureCanvases`、`readCanvasData`、`writeCanvasData` |
+| 画布操作 | `src/App.tsx` / `switchCanvas`、`createCanvas`、`duplicateCanvas`、`deleteCanvas` |
+| 快照与对比 | `src/flow/snapshotStore.ts` / `addSnapshot`（≤30）、`diffFlows` |
+| 健康检查 | `src/flow/flowHealth.ts` / `scanFlowHealth`（四类缺陷 + 条件变量对账） |
+| PNG/SVG/PDF | `src/flow/export/exportCanvas.ts`（`withFullRender` 导出保护在 App.tsx） |
+| 单文件 HTML 原型 | `src/flow/export/exportHtml.ts` |
+| 评审报告 | `src/flow/export/exportReport.ts` |
+| JSON 导入导出 | `src/flow/export/exportFile.ts` + `src/flow/schemaMigrate.ts`（v1→v3） |
+| QA 探针 | `src/flow/qaProbe.ts`（`window.__fcQA`） |
+| 性能基线图 | `src/flow/benchGraph.ts`（`?bench=medium&cull=1`） |
 
 ## 5. 数据与存储
 
@@ -230,125 +173,42 @@ graph TD
 | --- | --- |
 | `flowcraft.flow.v1` | `{ nodes, edges, annotations }`；备注节点可带 `data.anchor = { nodeId, side, gap }` |
 | `flowcraft.templates.v1` | 自定义模板数组 |
-| `flowcraft.annotations.v1` | 批注数组（兼容旧结构） |
-| `flowcraft.cull.v1` | 可视区裁剪开关（`"1"` 开 / `"0"` 关；缺省为开） |
+| `flowcraft.annotations.v1` | 批注数组 |
+| `flowcraft.cull.v1` | 可视区裁剪开关（缺省开） |
+| `flowcraft.canvases.v1` / `flowcraft.canvas.active.v1` / `flowcraft.canvas.data.<id>.v1` | 画布列表 / 活动 id / 非活动数据 |
+| `flowcraft.snapshots.<canvasId>.v1` | 快照（≤30 条） |
 
-流程 JSON 导出结构：
-
-```json
-{
-  "version": 2,
-  "nodes": [],
-  "edges": [],
-  "annotations": []
-}
-```
-
-模板 Bundle 结构：
-
-```json
-{
-  "version": 1,
-  "exportedAt": "2026-10-31T00:00:00.000Z",
-  "templates": []
-}
-```
+流程 JSON 导出 `{ version: 3, nodes, edges, annotations }`；导入端 v1/v2 经 `schemaMigrate.ts` 自动迁移。
 
 ## 6. 常用修改入口
 
-- 改节点样式或尺寸：`src/flow/nodes.tsx` + `src/index.css`
-- 改备注关联、放置方向或旧档迁移：`src/flow/noteLayout.ts` + `src/App.tsx` + `src/flow/Inspector.tsx`
-- 改响应式顶栏与抽屉：`src/App.tsx` + `src/index.css` 的 `UI refresh 2026-10-31` 区块
-- 改界面元素渲染：`src/flow/ScreenView.tsx`、`src/flow/Icon.tsx`
-- 改连线外观或标签：`src/flow/edges.tsx`
-- 改避障行为：`src/flow/edgeRouting.ts`
-- 改路由缓存：`src/flow/edgeRoutingCache.ts`
-- 改边共享派生状态（zoom/lane/几何/可视区）：`src/flow/edgeStoreSelectors.ts` + `src/flow/edges.tsx`
-- 加工具栏按钮：`src/App.tsx` 的 toolbar/JSX 区域
-- 改右键/属性面板：`src/flow/Inspector.tsx`
-- 改批注：`src/flow/annotations.ts` + `src/flow/Inspector.tsx`
-- 改模板市场：`src/flow/templateMarket.ts` + `src/flow/Palette.tsx`
-- 改导出：`src/flow/exportCanvas.ts` + `exportLayout.ts` + `exportGeometry.ts`
-- 改持久化结构：`src/flow/types.ts` + `App.tsx` 的迁移/恢复逻辑
+- 连线外观 / 拖线反馈 / 光带：`src/flow/edges/edges.tsx` + `src/flow/edges/FlowStreaks.tsx` + `src/index.css`（搜 `fc-edge` / `data-drag`）
+- 连线路由与避障：`src/flow/edges/edgeRouting.ts`（设计依据见 docs/方案设计/连线系统设计.md）
+- 连线颜色：`src/flow/edges/edgeColors.ts`（点=线=箭头一处改）
+- 节点样式 / 拖线信号：`src/flow/nodes/nodes.tsx` + `src/index.css`
+- 界面元素渲染 / 走查：`src/flow/preview/ScreenView.tsx`、`src/flow/Icon.tsx`
+- 原型逻辑（条件/校验）：`src/flow/preview/prototypeLogic.ts`
+- 属性面板：`src/flow/Inspector.tsx`
+- 模板市场：`src/flow/templates/*` + `src/flow/Palette.tsx`
+- 导出：`src/flow/export/*`
+- 工具栏 / 快捷键 / 画布接线：`src/App.tsx`
+- 持久化结构：`src/flow/types.ts` + `src/flow/schemaMigrate.ts`
 
 ## 7. 验证清单
 
 ```powershell
-npm test          # 214 个测试：几何、缓存、导出、批注、模板、模板包、原型逻辑、备注布局、元素编辑器（含容器钳制）、回边平衡、基准图、边共享派生状态等价性、schema 迁移、预览调试、评审报告、QA 探针
+npm test          # 269 个测试：路由性质、标签、光带采样、选中信号、对齐分布、批注、模板、原型逻辑、
+                  # 备注、元素编辑器、导出布局、schema 迁移、预览调试、评审报告、QA 探针等
 npm run lint      # Oxlint
 npm run build     # TypeScript + Vite 生产构建
 npm run dev -- --port 5177
 ```
 
-浏览器回归重点：
+浏览器回归的自动化限制与可靠做法见 [docs/质量与验收/验收方法论.md](./docs/质量与验收/验收方法论.md)；手工回归重点：
 
-1. 新建多个节点并让连线穿过中间节点，确认连线从节点外侧绕过。
-2. 拖动节点时连线实时重算，不穿过卡片。
-3. 远距离回退保持最短避障；近距离上下闭环走局部下通道，不再统一绕到全局底部。
-4. 标签跟随绕行路径，且不被障碍节点遮挡。
-5. 缩放低于 0.3 时标签隐藏，避免糊屏。
-6. 选中节点/连线，在右侧面板新增、编辑、改色、删除批注；刷新后恢复。
-7. 模板搜索、分类、保存、导出、重复导入去重、非法 JSON 提示。
-8. PNG / SVG / PDF 均可下载；PNG 非空、SVG 可解析、PDF 完整；导出后视口与选中状态不变。
-9. 导出的 JSON 含 `version: 2` 和 `annotations`。
-10. 移动支付界面，确认关联备注始终贴在目标底部，且不能单独拖走。
-11. 在 940px / 620px 窄屏打开并关闭资源库、属性抽屉；关闭后无残留遮罩或关闭按钮。
-12. 在 1470px、1180px、900px、620px 检查页面无横向溢出，顶栏资源库与属性入口均可用。
-13. 选中界面 → 拖动元素进入自由布局 → 拖 8 方向把手；确认宽高变化、对齐参考线释放、层级调整可用。
-14. 选中连线 → 修改出发热点与线路走向；确认路径立即变化、撤销可恢复、导出的 JSON 保留 `data.routeMode`。
-15. 可视区裁剪：工具栏裁剪按钮切换后刷新仍保持；大图局部视角拖动节点应流畅无卡死。
-16. 裁剪开启时导出 PNG / 打印：内容必须包含视口外的全部节点（导出保护 `withFullRender`），导出后画布恢复裁剪渲染。
-17. 元素边界约束：把界面元素向屏幕外猛拖 / 猛拉缩放把手，元素应贴容器缘线停下（不被 `overflow: hidden` 裁掉）；属性面板 X/Y/宽 输入越界值时同样被钳回容器。
-
-## 8. 功能状态
-
-| 项目 | 状态 |
-| --- | --- |
-| 备注错位修复 | ✅ 完成（锚定目标、旧存档迁移、删除级联） |
-| UI / UX 重构 | ✅ 完成（顶栏分组、属性折叠、资源库 Tab、响应式抽屉） |
-| 元素缩放 / 吸附 / 层级 | ✅ 完成（选中常显 8 方向把手；`nodrag` 保留把手事件；拖动吸附参考线；属性面板调整层级） |
-| 连线标签归属 | ✅ 完成（标签卡片同目标堆叠 + 引导线与锚点圆点落在各自边锚点；主箭头与标签引导线箭头强化方向；默认仅锚点/方向，选中显示文字） |
-| P0-1 边缘避障 | ✅ 完成 |
-| 回边长度 / 交叉平衡与连线二次编辑 | ✅ 完成（自动智能平衡；选中可改出发热点和上/下通道） |
-| P1 PNG / SVG / PDF 导出 | ✅ 完成 |
-| P1 单文件 HTML 原型 / JSON | ✅ 完成 |
-| P2 批注 | ✅ 完成（节点/连线，本地持久化，随 JSON 导出） |
-| P2 模板市场 | ✅ 完成本地版（搜索、分类、保存、导入导出、去重） |
-| P2 性能优化 | ✅ 完成（有界路由缓存、导出动态拆包、可视区裁剪默认启用；基线见 `docs/perf-baseline-2026-11-01.md`） |
-| 远程模板市场 | ⛔ 未实现 |
-| 云端同步 | ⛔ 不做（当前无云盘） |
-| 多人实时编辑 | ⛔ 不做 |
-| 第三方评论 | ⛔ 不做 |
-| P0-2 垂直布局 | ⛔ 不做 |
-
-## 9. 已知约束与下一步
-
-已知约束：
-
-- 本项目曾遇到 Vite 预打包缓存导致连线不显示；处理方式是删除 `node_modules/.vite` 后重启并硬刷新。
-- 路由候选网格随节点数量增长；已加有界 LRU 缓存 + 可视区裁剪（默认开）。自动回边平衡是确定性几何启发式，不保证全图交叉数全局最优。
-- 可视区裁剪开启时，视口外节点不在 DOM 中；任何依赖克隆实时 DOM 的功能（PNG/SVG/PDF 导出、打印）必须先走 `withFullRender`。全图 fitView 时裁剪没有 DOM 收益，medium 级图挂载会慢约 3s（见基线文档）。
-- 模板市场是本地模板库，不涉及远程服务器或账号体系。
-- 导出的单文件原型带条件求值、输入校验与切换动效，但仍是前端演示快照：没有真实提交、存储或服务端逻辑；条件只支持单变量比较。
-- `.fc-screen` 使用 `overflow: hidden`；元素拖拽/缩放与属性面板数字输入都经 `clampMoveBox`/`clampResizeBox` 钳制在 `.fc-body` 内容区内（Ego 实测越界拖动 1200px 后贴边不越界）。自由布局高度随内容增长，纵向不封顶。
-
-下一步建议（按性价比）：
-
-1. ~~若要协作，单独设计后端、权限和冲突合并~~ ✅ 设计已产出：[docs/协作方案设计.md](./docs/协作方案设计.md)（仅设计，不实现）。
-2. ~~在 JSON 导入时增加显式 schema 版本迁移与错误详情~~ ✅ 已完成：`src/flow/schemaMigrate.ts`（v1→v3 显式迁移链 + 逐条 ImportIssue + 未来版本拒绝，8 条测试）。
-
-已完成（2026-11-01）：`FlowEdge` 的 `laneIndex/peerInfo` 每边 O(E) 扫描改为 `edgeStoreSelectors.ts` 共享派生（WeakMap 按 store 对象记忆，一次更新全图只派生一次；200 节点/240 边确定性微基准 2.68→0.06 ms/帧，Ego A/B 电商示例 14 边 path d 校验和与标签 lane 逐字节一致）；边路由 LRU 扩容至 2048，并对几何数组实例做了序列缓存。
-
-已完成（2026-11-02）：模板预览缩略图（`templateThumbnails.ts` 自包含 SVG，纯函数无 DOM 依赖）+ 内置行业模板包（`templatePacks.ts` 3 个业务链路包，点击/拖入整体插入、一次撤销回退）。Ego round6 回归 PASS：电商示例 14 边锚点逐字节一致、调色板 6 缩略图 + 3 包卡片、搜索过滤、点击插入 12/14→21/24 与拖入 HR 包均一次撤销恢复。
-
-已完成（2026-11-02）：原型逻辑（`prototypeLogic.ts` 共享求值器，Ego round7 42/42 PASS）；多画布管理、版本快照与对比、流程健康检查（`canvasStore.ts` / `snapshotStore.ts` / `flowHealth.ts`，Ego round8 22/22 PASS）。
-
-已完成（2026-11-02）：Schema 版本迁移与导入校验（`schemaMigrate.ts`，支持 v1→v2→v3 自动迁移，逐项校验并生成可读报告）；流程健康检查增强（条件变量对账、无名界面检测）；预览调试面板（`previewDebug.ts`，变量表 + 走查轨迹）；评审报告导出（`exportReport.ts`，HTML 格式含界面/连线/判断/批注/体检）；版本时间线（按天分组 + 重命名）；QA 探针（`qaProbe.ts`，`window.__fcQA` 自动化验收接口）。Ego round9 验收 PASS：探针/时间线/调试面板/导入检查。
-
----
-
-最后更新：2026-11-02
-
-
-
-
+1. 拖动节点时连线实时重算、不穿卡；回边走专用候选。
+2. 选中节点：相连边亮光晕 + 光带流动，其余连线淡到 0.22；取消选中还原。
+3. 拖线到目标卡任意位置：预览转拖线色实线；入口点半径内点放大转色、整卡亮外圈；松手落卡建线。
+4. 双击连线标签原地改文案；双击标题改名；Esc/空文案回退。
+5. 窄屏 940/620 抽屉开合无溢出、无残留遮罩。
+6. PNG/SVG/PDF/单文件 HTML 导出均可用（裁剪开启时导出自动全量渲染）。

@@ -9,7 +9,7 @@ import {
   parseTemplateBundle,
   templateCategory,
   validateTemplate,
-} from "../src/flow/templateMarket.ts";
+} from "../src/flow/templates/templateMarket.ts";
 import type { ScreenTemplate } from "../src/flow/types.ts";
 
 const loginTemplate: ScreenTemplate = {

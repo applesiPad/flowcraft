@@ -8,8 +8,8 @@
  * 该文件刻意只依赖类型与 sample.ts（纯数据），可被 Node 测试直接 import。
  */
 import type { Edge, Node } from "@xyflow/react";
-import type { ConditionSpec, ScreenData, ScreenElement, ScreenTemplate } from "./types.ts";
-import { screenTemplates } from "./sample.ts";
+import type { ConditionSpec, ScreenData, ScreenElement, ScreenTemplate } from "../types.ts";
+import { screenTemplates } from "../sample.ts";
 
 /** 名义尺寸：只用于缩略图与「插入到视口中心」时的包围盒计算，实际节点尺寸由内容决定。 */
 export const PACK_NODE_SIZE: Record<PackNodeKind, { w: number; h: number }> = {

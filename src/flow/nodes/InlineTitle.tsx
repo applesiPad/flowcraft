@@ -1,24 +1,26 @@
 /**
- * §8-4 stretch 连线标签原地编辑：双击选中态连线标签 → contentEditable。
- * 交互与 InlineTitle 同语义（Enter/失焦提交、Esc 取消、空文案回退），
- * 提交走 EditorContext.patchEdgeLabel（App 层 patchEdge，historyKey edge:…:label 与 Inspector 同键合并）。
- * 与 InlineTitle 的差异：标签挂在 EdgeLabelRenderer 浮层而非节点内，不需要 nodrag/nopan
- * （浮层本身不参与 RF 拖拽/框选命中），但 onDoubleClick 仍要 stopPropagation 防触发画布手势。
+ * §8-4 节点标题原地编辑：双击 → contentEditable，Enter/失焦提交、Esc 取消、空文案回退。
+ * 非受控：编辑态只在进入时播种一次文本，避免 React 重渲染重置光标；
+ * 提交走 EditorContext.patchTitle（App 层 patchNodeData，进撤销栈，同卡连续编辑合并为一步）。
+ * 与 ScreenView 存在模块级循环（EditorContext 所在），双方都只在渲染期取值，ESM 下安全。
  */
 import { memo, useContext, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { EditorContext } from "./ScreenView";
-import { sanitizeEdgeLabelInput } from "./edgeLabel";
+import { EditorContext } from "../preview/ScreenView.tsx";
+import { sanitizeTitleInput } from "./inlineTitle.ts";
 
-type EdgeLabelTitleProps = {
-  edgeId: string;
+type InlineTitleProps = {
+  nodeId: string;
   value: string;
+  className?: string;
+  /** 预览/走查等场景由父级直接关死 */
+  editable?: boolean;
 };
 
-export const EdgeLabelTitle = memo(function EdgeLabelTitle({ edgeId, value }: EdgeLabelTitleProps) {
-  const { walkMode, preview, patchEdgeLabel } = useContext(EditorContext);
+export const InlineTitle = memo(function InlineTitle({ nodeId, value, className, editable = true }: InlineTitleProps) {
+  const { walkMode, preview, patchTitle } = useContext(EditorContext);
   const [editing, setEditing] = useState(false);
   const ref = useRef<HTMLSpanElement | null>(null);
-  const canEdit = !!patchEdgeLabel && !walkMode && !preview;
+  const canEdit = editable && !!patchTitle && !walkMode && !preview;
 
   useEffect(() => {
     if (!editing) return;
@@ -36,8 +38,8 @@ export const EdgeLabelTitle = memo(function EdgeLabelTitle({ edgeId, value }: Ed
   const commit = () => {
     if (!editing) return;
     setEditing(false);
-    const next = sanitizeEdgeLabelInput(ref.current?.textContent ?? "", value);
-    if (next) patchEdgeLabel?.(edgeId, next);
+    const next = sanitizeTitleInput(ref.current?.textContent ?? "", value);
+    if (next) patchTitle?.(nodeId, next);
   };
 
   if (editing) {
@@ -46,7 +48,7 @@ export const EdgeLabelTitle = memo(function EdgeLabelTitle({ edgeId, value }: Ed
       <span
         key="editing"
         ref={ref}
-        className="fc-edge-label-text fc-inline-editing"
+        className={`${className ?? ""} fc-inline-editing nodrag nopan nowheel`}
         contentEditable
         suppressContentEditableWarning
         onBlur={commit}
@@ -54,7 +56,7 @@ export const EdgeLabelTitle = memo(function EdgeLabelTitle({ edgeId, value }: Ed
         onMouseDown={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
         onKeyDown={(e: KeyboardEvent<HTMLSpanElement>) => {
-          // 阻断画布快捷键（删除连线等）与 RF 手势
+          // 阻断画布快捷键（删除节点等）与 RF 拖拽
           e.stopPropagation();
           if (e.key === "Enter") {
             e.preventDefault();
@@ -73,13 +75,13 @@ export const EdgeLabelTitle = memo(function EdgeLabelTitle({ edgeId, value }: Ed
 
   return (
     <span
-      className="fc-edge-label-text fc-edge-label-editable"
+      className={className}
       onDoubleClick={(e: ReactMouseEvent<HTMLSpanElement>) => {
         if (!canEdit) return;
         e.stopPropagation();
         setEditing(true);
       }}
-      title={canEdit ? "双击编辑触发文案" : undefined}
+      title={canEdit ? "双击编辑标题" : undefined}
     >
       {value}
     </span>

@@ -1,11 +1,11 @@
 import { useDeferredValue, useId, useMemo, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent } from "react";
-import { Icon } from "./Icon";
-import { filterTemplates, getTemplateCategories, templateCategory, type TemplateCategory } from "./templateMarket";
-import { screenTemplates } from "./sample";
-import { packMetrics, screenPacks, type ScreenPack } from "./templatePacks";
-import { packThumbnailSvg, screenThumbnailSvg } from "./templateThumbnails";
-import type { ScreenTemplate } from "./types";
+import { Icon } from "./Icon.tsx";
+import { filterTemplates, getTemplateCategories, templateCategory, type TemplateCategory } from "./templates/templateMarket.ts";
+import { screenTemplates } from "./sample.ts";
+import { packMetrics, screenPacks, type ScreenPack } from "./templates/templatePacks.ts";
+import { packThumbnailSvg, screenThumbnailSvg } from "./templates/templateThumbnails.ts";
+import type { ScreenTemplate } from "./types.ts";
 
 export type PaletteDragPayload =
   | { kind: "screen"; template: string }

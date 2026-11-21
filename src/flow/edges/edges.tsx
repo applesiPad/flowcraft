@@ -6,27 +6,27 @@ import {
   getBezierPath,
   type Point,
   type PortDirection,
-} from "./edgeRouting";
-import { handleColorOf } from "./edgeColors";
+} from "./edgeRouting.ts";
+import { handleColorOf } from "./edgeColors.ts";
 import {
   laneGroupForEdge,
   laneIndexOfEdge,
   selectDerivedEdgeFlowState,
-} from "./edgeStoreSelectors";
+} from "./edgeStoreSelectors.ts";
 import {
   createArrowMarker,
   pointOnPolyline,
   polylineLength,
   type EdgeLabelPoint,
-} from "./edgeLabel";
-import { EdgeLabelTitle } from "./EdgeLabelTitle";
-import { FlowStreaks } from "./FlowStreaks";
+} from "./edgeLabel.ts";
+import { EdgeLabelTitle } from "./EdgeLabelTitle.tsx";
+import { FlowStreaks } from "./FlowStreaks.tsx";
 import {
   subscribeSelection,
   selectionVersion,
   selectionActive,
   selectionHasNode,
-} from "./selectionSignal";
+} from "./selectionSignal.ts";
 
 // ── 箭头 marker ──────────────────────────────────────────────────────
 

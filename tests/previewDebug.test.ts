@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Node } from "@xyflow/react";
-import { debugVarEntries, formatTrail, varSourceMap, type TrailStep } from "../src/flow/previewDebug.ts";
+import { debugVarEntries, formatTrail, varSourceMap, type TrailStep } from "../src/flow/preview/previewDebug.ts";
 
 const screenNode = (id: string, title: string, elements: Record<string, unknown>[]): Node => ({
   id,

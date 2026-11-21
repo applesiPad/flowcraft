@@ -1,5 +1,5 @@
 import type { Node } from "@xyflow/react";
-import type { NoteAnchor, NoteAnchorSide } from "./types";
+import type { NoteAnchor, NoteAnchorSide } from "./types.ts";
 
 export type NoteTargetGeometry = {
   x: number;

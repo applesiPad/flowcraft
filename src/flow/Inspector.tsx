@@ -1,12 +1,12 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Edge, Node } from "@xyflow/react";
-import { createAnnotation, getAnnotationsByTarget } from "./annotations";
-import type { Annotation, AnnotationColor, AnnotationTargetType } from "./annotations";
-import type { DecisionData, NoteAnchorSide, NoteData, ScreenData, ScreenElement } from "./types";
-import { normalizeEdgeRouteMode } from "./edgeRouting";
-import { clampMoveBox, clampResizeBox, DEFAULT_ELEMENT_REGION } from "./elementEditor";
-import { CONDITION_OPS, normalizeCondition, VALIDATION_OPTIONS } from "./prototypeLogic";
+import { createAnnotation, getAnnotationsByTarget } from "./annotations.ts";
+import type { Annotation, AnnotationColor, AnnotationTargetType } from "./annotations.ts";
+import type { DecisionData, NoteAnchorSide, NoteData, ScreenData, ScreenElement } from "./types.ts";
+import { normalizeEdgeRouteMode } from "./edges/edgeRouting.ts";
+import { clampMoveBox, clampResizeBox, DEFAULT_ELEMENT_REGION } from "./nodes/elementEditor.ts";
+import { CONDITION_OPS, normalizeCondition, VALIDATION_OPTIONS } from "./preview/prototypeLogic.ts";
 
 /** 属性面板的数字输入以界面本地像素为单位（zoom=1 视角下的默认内容区） */
 const EL_REGION = DEFAULT_ELEMENT_REGION;

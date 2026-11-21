@@ -8,7 +8,7 @@
  * 该文件刻意保持自包含（只有 type-only 依赖），因此可被 Node 测试直接 import。
  */
 import type { Edge, Node } from "@xyflow/react";
-import type { ScreenData, ScreenElement } from "./types";
+import type { ScreenData, ScreenElement } from "./types.ts";
 
 export type BenchLevel = "small" | "medium" | "large";
 

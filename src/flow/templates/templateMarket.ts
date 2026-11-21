@@ -3,7 +3,7 @@ import type {
   ScreenData,
   ScreenElement,
   ScreenTemplate,
-} from "./types.ts";
+} from "../types.ts";
 
 export type TemplateCategory = "登录" | "列表" | "详情" | "设置" | "支付" | "其他";
 

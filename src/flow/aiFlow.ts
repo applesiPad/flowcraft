@@ -15,7 +15,7 @@
  */
 import type { ConditionSpec, ScreenData } from "./types.ts";
 import { screenTemplates } from "./sample.ts";
-import { PACK_NODE_SIZE, packMetrics, validateScreenPack, type PackEdgeSpec, type PackMetrics, type PackNodeSpec, type ScreenPack } from "./templatePacks.ts";
+import { PACK_NODE_SIZE, packMetrics, validateScreenPack, type PackEdgeSpec, type PackMetrics, type PackNodeSpec, type ScreenPack } from "./templates/templatePacks.ts";
 
 /** 模板词典：关键词 → 内置模板键。顺序即优先级。 */
 const TEMPLATE_HINTS: { keys: string[]; template: string }[] = [

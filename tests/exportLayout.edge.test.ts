@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeFitViewport, computePdfPlacement, buildExportFilename } from "../src/flow/exportLayout.ts";
+import { computeFitViewport, computePdfPlacement, buildExportFilename } from "../src/flow/export/exportLayout.ts";
 
 test("padding 为 0 时内容贴满画布", () => {
   const viewport = computeFitViewport({ x: 100, y: 50, width: 800, height: 400 }, 800, 400, { padding: 0 });

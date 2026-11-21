@@ -26,21 +26,21 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { ActionNode, DecisionNode, NoteNode, ScreenNode } from "./flow/nodes";
-import { FlowEdge, BezierConnectionLine } from "./flow/edges";
-import { publishSelection } from "./flow/selectionSignal";
+import { ActionNode, DecisionNode, NoteNode, ScreenNode } from "./flow/nodes/nodes";
+import { FlowEdge, BezierConnectionLine } from "./flow/edges/edges";
+import { publishSelection } from "./flow/edges/selectionSignal";
 import { Palette, type PaletteDragPayload } from "./flow/Palette";
 import { Inspector } from "./flow/Inspector";
-import { Preview } from "./flow/Preview";
+import { Preview } from "./flow/preview/Preview";
 import { Icon } from "./flow/Icon";
-import { moveElementZ, type ZOrderAction } from "./flow/elementEditor";
+import { moveElementZ, type ZOrderAction } from "./flow/nodes/elementEditor";
 import { applyAlignAction, type AlignAction, type AlignBox } from "./flow/alignDistribute";
-import type { EdgeRouteMode } from "./flow/edgeRouting";
-import { EditorContext } from "./flow/ScreenView";
+import type { EdgeRouteMode } from "./flow/edges/edgeRouting";
+import { EditorContext } from "./flow/preview/ScreenView";
 import { initialEdges, initialNodes, screenTemplates } from "./flow/sample";
-import { buildPackGraph, packBounds, screenPacks, PACK_NODE_SIZE, type ScreenPack } from "./flow/templatePacks";
-import { buildPrototypeHtml } from "./flow/exportHtml";
-import { resolveFlowTarget } from "./flow/prototypeLogic";
+import { buildPackGraph, packBounds, screenPacks, PACK_NODE_SIZE, type ScreenPack } from "./flow/templates/templatePacks";
+import { buildPrototypeHtml } from "./flow/export/exportHtml";
+import { resolveFlowTarget } from "./flow/preview/prototypeLogic";
 import {
   ensureCanvases,
   newCanvasMeta,
@@ -67,9 +67,9 @@ import {
 import { computeDeadHints, HEALTH_KIND_LABEL, scanFlowHealth, type HealthIssue } from "./flow/flowHealth";
 import { AI_EXAMPLES, buildAiPack, findBlankAnchor, planFlowFromText, screenViewsForSuggestion, suggestWires, type AiPlanResult, type WireSuggestion } from "./flow/aiFlow";
 import { parseFlowFile, summarizeImport, type ImportResult } from "./flow/schemaMigrate";
-import { buildReportHtml } from "./flow/exportReport";
+import { buildReportHtml } from "./flow/export/exportReport";
 import { installQaProbe } from "./flow/qaProbe";
-import { exportTextFile } from "./flow/exportFile";
+import { exportTextFile } from "./flow/export/exportFile";
 import {
   applyFlowHistory,
   diffFlowHistory,
@@ -91,8 +91,8 @@ import {
   cloneTemplateForInsert,
   mergeTemplates,
   parseTemplateBundle,
-} from "./flow/templateMarket";
-import type { CanvasExportResult, ExportFormat } from "./flow/exportTypes";
+} from "./flow/templates/templateMarket";
+import type { CanvasExportResult, ExportFormat } from "./flow/export/exportTypes";
 import { cascadeDeleteNode, layoutAnchoredNotes, migrateLegacyNoteAnchors } from "./flow/noteLayout";
 import { applyTheme, edgeMarkerColor, nextTheme, readTheme, THEME_STORAGE_KEY, type Theme } from "./flow/theme";
 const nodeTypes = { screen: ScreenNode, decision: DecisionNode, action: ActionNode, note: NoteNode };
@@ -1416,7 +1416,7 @@ function CanvasApp({ exampleMode = false, benchMode = null }: { exampleMode?: bo
     showToast(`正在导出 ${labels[format]}…`);
     try {
       await withFullRender(async () => {
-        const { exportCanvas } = await import("./flow/exportCanvas");
+        const { exportCanvas } = await import("./flow/export/exportCanvas");
         const result: CanvasExportResult = await exportCanvas(canonicalNodes, {
           format,
           title: "FlowCraft-流程图",

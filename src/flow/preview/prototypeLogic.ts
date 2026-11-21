@@ -5,7 +5,7 @@
  * 保证「画布上点的」与「客户点到的」行为一致。纯函数、无 DOM 依赖，Node 测试可直接 import。
  */
 import type { Edge, Node } from "@xyflow/react";
-import type { ConditionSpec, DecisionData, InputValidation, ScreenData, ScreenElement } from "./types.ts";
+import type { ConditionSpec, DecisionData, InputValidation, ScreenData, ScreenElement } from "../types.ts";
 
 export const CONDITION_OPS: { value: ConditionSpec["op"]; label: string }[] = [
   { value: "==", label: "等于" },

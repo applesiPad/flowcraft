@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
-import type { DecisionData, ScreenData, ScreenElement } from "./types";
-import { namedInputs, normalizeCondition } from "./prototypeLogic";
+import type { DecisionData, ScreenData, ScreenElement } from "../types.ts";
+import { namedInputs, normalizeCondition } from "../preview/prototypeLogic.ts";
 
 export type PrototypeExport = { html: string; screens: number; links: number };
 

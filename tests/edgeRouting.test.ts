@@ -9,7 +9,7 @@ import {
   selectBestPorts,
   type NodeGeometry,
   type Point,
-} from "../src/flow/edgeRouting.ts";
+} from "../src/flow/edges/edgeRouting.ts";
 
 /** 采样折线上是否有任一点落在 box 内部（用于绕障断言） */
 function samplesHitBox(pts: Point[], box: Box): boolean {

@@ -7,7 +7,7 @@
  * 纯函数、无 DOM 依赖，Node 测试可直接 import。
  */
 import type { Node } from "@xyflow/react";
-import type { ScreenData } from "./types.ts";
+import type { ScreenData } from "../types.ts";
 import { namedInputs } from "./prototypeLogic.ts";
 
 /** 轨迹里的一步：落在哪张界面、经由哪条连线（起点 via=null） */

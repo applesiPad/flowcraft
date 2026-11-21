@@ -8,8 +8,8 @@
  * 界面小卡内部按元素 kind 画迷你 UI（按钮/输入框/列表行/开关/头像…），
  * 不点开也能认出这张界面长什么样、这条链路怎么走。
  */
-import type { ScreenElement, ScreenTemplate } from "./types.ts";
-import { screenTemplates } from "./sample.ts";
+import type { ScreenElement, ScreenTemplate } from "../types.ts";
+import { screenTemplates } from "../sample.ts";
 import { PACK_NODE_SIZE, packBounds, type PackNodeSpec, type ScreenPack } from "./templatePacks.ts";
 
 export const THUMB_W = 240;

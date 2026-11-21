@@ -8,7 +8,7 @@ import {
   pickDecisionHandle,
   resolveFlowTarget,
   validateInputValue,
-} from "../src/flow/prototypeLogic.ts";
+} from "../src/flow/preview/prototypeLogic.ts";
 import type { ScreenData } from "../src/flow/types.ts";
 
 test("normalizeCondition: 非法输入返回 null", () => {

@@ -1,4 +1,4 @@
-import type { ElementBox } from "./types";
+import type { ElementBox } from "../types.ts";
 
 /** 可拖拽的方位角：四角 + 四边 */
 export type ResizeHandlePos = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";

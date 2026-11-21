@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sanitizeTitleInput } from "../src/flow/inlineTitle.ts";
+import { sanitizeTitleInput } from "../src/flow/nodes/inlineTitle.ts";
 
 test("标题净化：正常文案 trim 后提交", () => {
   assert.equal(sanitizeTitleInput("  购物车  ", "旧标题"), "购物车");

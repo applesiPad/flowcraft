@@ -11,7 +11,7 @@
  */
 import type { Edge, Node } from "@xyflow/react";
 import { parseAnnotations, type Annotation } from "./annotations.ts";
-import { normalizeCondition } from "./prototypeLogic.ts";
+import { normalizeCondition } from "./preview/prototypeLogic.ts";
 import type { InputValidation, ScreenData } from "./types.ts";
 
 /** 当前导出/导入的 schema 版本。每次数据结构变更 +1，并在 MIGRATIONS 里补一步迁移。 */

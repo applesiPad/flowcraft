@@ -1,6 +1,6 @@
 import { createContext, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import { Icon } from "./Icon";
-import { InlineTitle } from "./InlineTitle.tsx";
+import { Icon } from "../Icon.tsx";
+import { InlineTitle } from "../nodes/InlineTitle.tsx";
 import {
   clampMoveBox,
   clampResizeBox,
@@ -12,9 +12,9 @@ import {
   type AlignGuideInput,
   type ContainerRegion,
   type ResizeHandlePos,
-} from "./elementEditor";
-import type { DeadHint } from "./flowHealth.ts";
-import type { ElementBox, ScreenData, ScreenElement } from "./types";
+} from "../nodes/elementEditor.ts";
+import type { DeadHint } from "../flowHealth.ts";
+import type { ElementBox, ScreenData, ScreenElement } from "../types.ts";
 
 const RESIZE_HANDLES: { pos: ResizeHandlePos; cls: string; cursor: string }[] = [
   { pos: "nw", cls: "fc-rz-nw", cursor: "nwse-resize" },

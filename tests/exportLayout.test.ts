@@ -5,7 +5,7 @@ import {
   computeFitViewport,
   computePdfPlacement,
   type ExportBounds,
-} from "../src/flow/exportLayout.ts";
+} from "../src/flow/export/exportLayout.ts";
 
 function corners(bounds: ExportBounds, viewport: { x: number; y: number; zoom: number }) {
   return [
